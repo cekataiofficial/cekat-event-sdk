@@ -14,23 +14,26 @@ var errInvalidResponseEnvelope = errors.New("invalid response envelope")
 
 // readBoundedBody retains at most responseBodyLimit bytes while observing one
 // additional byte to determine whether the response exceeded that limit.
-func readBoundedBody(reader io.Reader) ([]byte, error) {
+func readBoundedBody(reader io.Reader) (body []byte, overflow bool, err error) {
 	observed, err := io.ReadAll(io.LimitReader(reader, responseBodyLimit+1))
-	if len(observed) > responseBodyLimit {
+	overflow = len(observed) > responseBodyLimit
+	if overflow {
 		observed = observed[:responseBodyLimit]
 	}
 
 	// ReadAll's backing buffer is intentionally not returned. This makes the
 	// retained response body independent of temporary read storage.
-	body := append([]byte(nil), observed...)
-	return body, err
+	return append([]byte(nil), observed...), overflow, err
 }
 
 func decodeResponse(statusCode int, reader io.Reader, attempts int) (*Acknowledgement, error) {
-	body, readErr := readBoundedBody(reader)
+	body, overflow, readErr := readBoundedBody(reader)
 	if statusCode == http.StatusOK {
 		if readErr != nil {
 			return nil, responseDecodeError(body, attempts, readErr)
+		}
+		if overflow {
+			return nil, responseDecodeError(body, attempts, errInvalidResponseEnvelope)
 		}
 
 		acknowledgement, err := decodeSuccessEnvelope(body)

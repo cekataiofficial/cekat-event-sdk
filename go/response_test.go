@@ -17,17 +17,18 @@ func TestReadBoundedBody(t *testing.T) {
 		input    string
 		want     string
 		observed int
+		overflow bool
 	}{
 		{name: "short body", input: "body", want: "body", observed: 4},
 		{name: "exact limit", input: strings.Repeat("a", responseBodyLimit), want: strings.Repeat("a", responseBodyLimit), observed: responseBodyLimit},
-		{name: "over limit", input: strings.Repeat("a", responseBodyLimit+20), want: strings.Repeat("a", responseBodyLimit), observed: responseBodyLimit + 1},
-		{name: "multibyte boundary", input: strings.Repeat("€", responseBodyLimit/3+1), want: strings.Repeat("€", responseBodyLimit/3) + "€"[:1], observed: responseBodyLimit + 1},
+		{name: "over limit", input: strings.Repeat("a", responseBodyLimit+20), want: strings.Repeat("a", responseBodyLimit), observed: responseBodyLimit + 1, overflow: true},
+		{name: "multibyte boundary", input: strings.Repeat("€", responseBodyLimit/3+1), want: strings.Repeat("€", responseBodyLimit/3) + "€"[:1], observed: responseBodyLimit + 1, overflow: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reader := &observingReader{Reader: strings.NewReader(tt.input)}
-			got, err := readBoundedBody(reader)
+			got, overflow, err := readBoundedBody(reader)
 			if err != nil {
 				t.Fatalf("readBoundedBody() error = %v", err)
 			}
@@ -37,13 +38,19 @@ func TestReadBoundedBody(t *testing.T) {
 			if reader.read != tt.observed {
 				t.Errorf("observed bytes = %d, want %d", reader.read, tt.observed)
 			}
+			if overflow != tt.overflow {
+				t.Errorf("overflow = %t, want %t", overflow, tt.overflow)
+			}
 		})
 	}
 
 	input := []byte("body")
-	got, err := readBoundedBody(bytes.NewReader(input))
+	got, overflow, err := readBoundedBody(bytes.NewReader(input))
 	if err != nil {
 		t.Fatalf("readBoundedBody() error = %v", err)
+	}
+	if overflow {
+		t.Error("overflow = true, want false")
 	}
 	input[0] = 'x'
 	if string(got) != "body" {
@@ -79,6 +86,23 @@ func TestDecodeResponseSuccess(t *testing.T) {
 	}
 	if string(ack.RawBody) != body {
 		t.Errorf("RawBody = %q, want %q", ack.RawBody, body)
+	}
+}
+
+func TestDecodeResponseRejectsOversized200WithValidPrefix(t *testing.T) {
+	prefix := canonicalSuccess + strings.Repeat(" ", responseBodyLimit-len(canonicalSuccess))
+	body := prefix + "x"
+
+	ack, err := decodeResponse(http.StatusOK, strings.NewReader(body), 7)
+	if ack != nil {
+		t.Errorf("decodeResponse() acknowledgement = %#v, want nil", ack)
+	}
+	var decodeErr *ResponseDecodeError
+	if !errors.As(err, &decodeErr) {
+		t.Fatalf("decodeResponse() error = %T %v, want *ResponseDecodeError", err, err)
+	}
+	if decodeErr.StatusCode != http.StatusOK || decodeErr.Attempts != 7 || !bytes.Equal(decodeErr.Body, []byte(prefix)) || decodeErr.Cause == nil {
+		t.Errorf("decode error = %#v, want status, attempts, owned 65536-byte prefix, and cause", decodeErr)
 	}
 }
 
