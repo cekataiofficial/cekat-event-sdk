@@ -2,6 +2,7 @@ package contract
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,51 +16,115 @@ const (
 	conformanceCaseSchemaURI = schemaIDBase + "conformance-case.schema.json"
 )
 
+func TestConformanceReadmeContractMutations(t *testing.T) {
+	readme, err := os.ReadFile(conformanceReadmePath)
+	if err != nil {
+		t.Fatalf("read conformance README: %v", err)
+	}
+
+	for _, mutation := range []struct {
+		name string
+		old  string
+		new  string
+	}{
+		{
+			name: "permissive environment aliases",
+			old:  "Runners reject missing inputs, aliases, defaults, repository-relative fixture fallbacks, and every additional `CEKAT_CONFORMANCE_*` variable.",
+			new:  "Runners may accept aliases, defaults, repository-relative fixture fallbacks, and additional `CEKAT_CONFORMANCE_*` variables.",
+		},
+		{
+			name: "relative nested discovery",
+			old:  "A runner discovers every direct `*.json` file in the absolute directory supplied by `CEKAT_CONFORMANCE_FIXTURES`. Explicit filename allowlists, a fixed expected case count, and nested-file discovery are forbidden.",
+			new:  "A runner may discover relative and nested `*.json` files. Explicit filename allowlists are allowed.",
+		},
+		{
+			name: "omitted accounting",
+			old:  "A schema-declared `not_applicable` is separately accounted: discovered IDs must equal the disjoint union of executed `passed` IDs and validated `not_applicable` IDs.",
+			new:  "A schema-declared `not_applicable` is allowed.",
+		},
+		{
+			name: "missing graceful cleanup",
+			old:  "Send `SIGINT` or `SIGTERM` after the runner exits, wait for exit status `0`, and allow its five-second graceful-shutdown deadline before force-cleaning a failed process.",
+			new:  "Stop the process after the runner exits.",
+		},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			mutated := strings.Replace(string(readme), mutation.old, mutation.new, 1)
+			if mutated == string(readme) {
+				t.Fatalf("mutation target was not found")
+			}
+			if err := validateConformanceReadme(mutated); err == nil {
+				t.Fatal("mutated README unexpectedly satisfied the contract")
+			}
+		})
+	}
+}
+
+func TestCancellationApplicabilityMutations(t *testing.T) {
+	missingApplicability := map[string]any{"id": "new-cancellation", "kind": "cancellation"}
+	if err := validateCancellationApplicability("new-cancellation.json", missingApplicability); err == nil {
+		t.Fatal("cancellation kind without applicability unexpectedly passed")
+	}
+
+	nonCancellation := map[string]any{
+		"id":   "request-with-applicability",
+		"kind": "request",
+		"applicability": map[string]any{
+			"requires_capabilities":  []any{"caller_cancellation"},
+			"inapplicable_languages": []any{"php", "ruby"},
+		},
+	}
+	if err := validateCancellationApplicability("request-with-applicability.json", nonCancellation); err == nil {
+		t.Fatal("non-cancellation applicability unexpectedly passed")
+	}
+}
+
 func TestConformanceReadmeContract(t *testing.T) {
 	readme, err := os.ReadFile(conformanceReadmePath)
 	if err != nil {
 		t.Fatalf("read conformance README: %v", err)
 	}
 
-	contents := string(readme)
-	for _, required := range []string{
-		"CEKAT_CONFORMANCE_BASE_URL",
-		"CEKAT_CONFORMANCE_CONTROL_URL",
-		"CEKAT_CONFORMANCE_ACCESS_TOKEN",
-		"CEKAT_CONFORMANCE_FIXTURES",
-		"go/scripts/conformance",
-		"node/scripts/conformance",
-		"python/scripts/conformance",
-		"php/scripts/conformance",
-		"java/scripts/conformance",
-		"dotnet/scripts/conformance",
-		"ruby/scripts/conformance",
-		"POST /api/events/ingest",
-		"10 seconds per network attempt",
-		"Default retry count is 2 after the initial attempt",
-		"[0,100ms]",
-		"[0,200ms]",
-		"65,536",
-		`{"success":true,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`,
-		`{"success":false,"error":"defined server error","code":"fixture_code"}`,
-		"POST /__control/reset",
-		"POST /__control/responses",
-		"GET /__control/requests",
-		"before_request",
-		"during_request",
-		"during_backoff",
-		`"inapplicable_languages":["php","ruby"]`,
-		"Unknown fixture forms cannot be skipped",
-		"Applicable cases cannot be skipped",
-		"schema-declared `not_applicable`",
-		"simulates transport behavior but does not decide SDK error types",
-		"must not disclose the access token",
-		"COMPATIBILITY.md",
-	} {
-		if !strings.Contains(contents, required) {
-			t.Errorf("conformance README must document %q", required)
-		}
+	if err := validateConformanceReadme(string(readme)); err != nil {
+		t.Error(err)
 	}
+}
+
+func validateConformanceReadme(readme string) error {
+	sections := map[string]string{}
+	var heading string
+	for _, line := range strings.Split(readme, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			heading = strings.TrimPrefix(line, "## ")
+		}
+		sections[heading] += line + "\n"
+	}
+	require := func(section string, terms ...string) error {
+		contents := sections[section]
+		for _, term := range terms {
+			if !strings.Contains(contents, term) {
+				return fmt.Errorf("README section %q must contain %q", section, term)
+			}
+		}
+		return nil
+	}
+	if err := require("Runner environment boundary",
+		"requires exactly these four non-empty environment variables", "CEKAT_CONFORMANCE_BASE_URL       absolute mock HTTP(S) origin with no path", "CEKAT_CONFORMANCE_CONTROL_URL    same-process mock control HTTP(S) origin with no path", "CEKAT_CONFORMANCE_ACCESS_TOKEN   conformance-token in CI", "CEKAT_CONFORMANCE_FIXTURES       absolute readable path to conformance/fixtures/cases", "reject missing inputs, aliases, defaults, repository-relative fixture fallbacks, and every additional `CEKAT_CONFORMANCE_*` variable"); err != nil {
+		return err
+	}
+	if err := require("Start and stop the mock", "go run ./cmd/mock-ingest-server --listen 127.0.0.1:0", "first and only stdout line", `{"base_url":"http://127.0.0.1:43127","control_url":"http://127.0.0.1:43127"}`, "Send `SIGINT` or `SIGTERM` after the runner exits, wait for exit status `0`, and allow its five-second graceful-shutdown deadline", "go/scripts/conformance", "node/scripts/conformance", "python/scripts/conformance", "php/scripts/conformance", "java/scripts/conformance", "dotnet/scripts/conformance", "ruby/scripts/conformance"); err != nil {
+		return err
+	}
+	if err := require("Fixture discovery, validation, and accounting", "every direct `*.json` file in the absolute directory", "nested-file discovery are forbidden", "unaccounted discovered case", "Unknown fixture forms cannot be skipped", "Applicable cases cannot be skipped", "disjoint union of executed `passed` IDs and validated `not_applicable` IDs", "Runtime recipes are fixture instructions", "expands `response_body_recipe` to an ordinary response body", "reset the mock", "assert the journal after the case", "fixed path", "exactly to `expect.error_message`", `{"success":false,"error":"defined server error","code":"fixture_code"}`, `{"success":true,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`, "before_request", "during_request", "during_backoff", `{"requires_capabilities":["caller_cancellation"],"inapplicable_languages":["php","ruby"]}`); err != nil {
+		return err
+	}
+	if err := require("Delivery semantics", "10 seconds per network attempt", "Default retry count is 2 after the initial attempt", "Retry only transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `500`", "[0,100ms]", "[0,200ms]", "Retain at most 65,536 response bytes", "Read one additional byte to determine truncation", "simulates transport behavior but does not decide SDK error types"); err != nil {
+		return err
+	}
+	if err := require("Mock control API", "POST /__control/reset", "POST /__control/responses", "GET /__control/requests", "Reset before each fixture case and inspect this journal after each fixture case"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func TestConformanceFixtureIntegrity(t *testing.T) {
@@ -69,33 +134,32 @@ func TestConformanceFixtureIntegrity(t *testing.T) {
 		t.Fatalf("compile conformance case schema: %v", err)
 	}
 
-	cancellationIDs := map[string]bool{
-		"cancellation-before-request": true,
-		"cancellation-during-request": true,
-		"cancellation-during-backoff": true,
-	}
 	for path, fixture := range loadCases(t) {
 		if err := schema.Validate(fixture); err != nil {
 			t.Errorf("validate %s: %v", path, err)
 		}
-
-		id, _ := fixture["id"].(string)
-		applicability, declared := fixture["applicability"]
-		if !declared {
-			if cancellationIDs[id] {
-				t.Errorf("%s must declare caller_cancellation applicability", path)
-			}
-			continue
-		}
-		if !cancellationIDs[id] {
-			t.Errorf("%s declares applicability outside the cancellation cases", path)
-			continue
-		}
-		app, ok := applicability.(map[string]any)
-		if !ok || !equalJSON(app["requires_capabilities"], []any{"caller_cancellation"}) || !equalJSON(app["inapplicable_languages"], []any{"php", "ruby"}) {
-			t.Errorf("%s applicability = %v, want caller_cancellation with only php and ruby inapplicable", path, applicability)
+		if err := validateCancellationApplicability(path, fixture); err != nil {
+			t.Error(err)
 		}
 	}
+}
+
+func validateCancellationApplicability(path string, fixture map[string]any) error {
+	applicability, declared := fixture["applicability"]
+	if fixture["kind"] != "cancellation" {
+		if declared {
+			return fmt.Errorf("%s declares applicability outside cancellation fixtures", path)
+		}
+		return nil
+	}
+	if !declared {
+		return fmt.Errorf("%s cancellation fixture must declare caller_cancellation applicability", path)
+	}
+	app, ok := applicability.(map[string]any)
+	if !ok || !equalJSON(app["requires_capabilities"], []any{"caller_cancellation"}) || !equalJSON(app["inapplicable_languages"], []any{"php", "ruby"}) {
+		return fmt.Errorf("%s applicability = %v, want caller_cancellation with only php and ruby inapplicable", path, applicability)
+	}
+	return nil
 }
 
 func loadCases(t *testing.T) map[string]map[string]any {
@@ -280,47 +344,16 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 	assertCancellationSemantics(t, byID)
 
 	languages := map[string]bool{"go": true, "node": true, "python": true, "php": true, "java": true, "dotnet": true, "ruby": true}
-	cancellationIDs := map[string]bool{
-		"cancellation-before-request": true,
-		"cancellation-during-request": true,
-		"cancellation-during-backoff": true,
-	}
 	for path, fixture := range cases {
-		id, _ := fixture["id"].(string)
-		applicability, declared := fixture["applicability"]
-		if !declared {
-			if cancellationIDs[id] {
-				t.Errorf("%s cancellation case must declare caller_cancellation applicability", path)
-			}
-			for language := range languages {
-				if !caseAppliesToLanguage(fixture, language) {
-					t.Errorf("%s without applicability must apply to %s", path, language)
-				}
-			}
-			continue
-		}
-		if !cancellationIDs[id] {
-			t.Errorf("%s declares applicability, but only the three cancellation cases may be inapplicable", path)
-		}
-		app, ok := applicability.(map[string]any)
-		if !ok {
-			t.Errorf("%s applicability is not an object", path)
-			continue
-		}
-		requires, ok := app["requires_capabilities"].([]any)
-		if !ok || len(requires) != 1 || requires[0] != "caller_cancellation" {
-			t.Errorf("%s requires_capabilities = %v, want [caller_cancellation]", path, app["requires_capabilities"])
-		}
-		inapplicable, ok := app["inapplicable_languages"].([]any)
-		if !ok || len(inapplicable) != 2 || inapplicable[0] != "php" || inapplicable[1] != "ruby" {
-			t.Errorf("%s inapplicable_languages = %v, want [php ruby]", path, app["inapplicable_languages"])
+		if err := validateCancellationApplicability(path, fixture); err != nil {
+			t.Error(err)
 			continue
 		}
 		for language := range languages {
 			got := !caseAppliesToLanguage(fixture, language)
-			want := language == "php" || language == "ruby"
+			want := fixture["kind"] == "cancellation" && (language == "php" || language == "ruby")
 			if got != want {
-				t.Errorf("%s applicability for %s = inapplicable:%t, want %t from caller_cancellation capability table", path, language, got, want)
+				t.Errorf("%s applicability for %s = inapplicable:%t, want %t from cancellation capability table", path, language, got, want)
 			}
 		}
 	}

@@ -25,17 +25,78 @@ var schemaFiles = []string{
 	"conformance-case.schema.json",
 }
 
+func schemaDirectory() string {
+	return filepath.Join("..", "..", "..", "fixtures", "schemas")
+}
+
+func discoverSchemaFiles(dir string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "*.schema.json"))
+	if err != nil {
+		return nil, fmt.Errorf("discover schemas: %w", err)
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("discover schemas: no direct *.schema.json files in %s", dir)
+	}
+	files := make([]string, len(paths))
+	for i, path := range paths {
+		files[i] = filepath.Base(path)
+	}
+	return files, nil
+}
+
+func compileSchemas(dir string) error {
+	files, err := discoverSchemaFiles(dir)
+	if err != nil {
+		return err
+	}
+	compiler := jsonschema.NewCompiler()
+	for _, resourceName := range files {
+		path := filepath.Join(dir, resourceName)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", resourceName, err)
+		}
+		var document map[string]any
+		if err := json.Unmarshal(data, &document); err != nil {
+			return fmt.Errorf("decode %s: %w", resourceName, err)
+		}
+		if got := document["$schema"]; got != draft202012 {
+			return fmt.Errorf("%s $schema = %v, want %q", resourceName, got, draft202012)
+		}
+		wantID := schemaIDBase + resourceName
+		if got := document["$id"]; got != wantID {
+			return fmt.Errorf("%s $id = %v, want %q", resourceName, got, wantID)
+		}
+		uri := fmt.Sprintf("file://%s", path)
+		if err := compiler.AddResource(uri, document); err != nil {
+			return fmt.Errorf("add file URI for %s: %w", resourceName, err)
+		}
+		if err := compiler.AddResource(wantID, document); err != nil {
+			return fmt.Errorf("add canonical URI for %s: %w", resourceName, err)
+		}
+	}
+	for _, resourceName := range files {
+		if _, err := compiler.Compile(fmt.Sprintf("file://%s", filepath.Join(dir, resourceName))); err != nil {
+			return fmt.Errorf("compile %s: %w", resourceName, err)
+		}
+	}
+	return nil
+}
+
 func newSchemaCompiler(t *testing.T) *jsonschema.Compiler {
 	t.Helper()
 
+	files, err := discoverSchemaFiles(schemaDirectory())
+	if err != nil {
+		t.Fatal(err)
+	}
 	compiler := jsonschema.NewCompiler()
-	for _, resourceName := range schemaFiles {
-		path := filepath.Join("..", "..", "..", "fixtures", "schemas", resourceName)
+	for _, resourceName := range files {
+		path := filepath.Join(schemaDirectory(), resourceName)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", resourceName, err)
 		}
-
 		var document map[string]any
 		if err := json.Unmarshal(data, &document); err != nil {
 			t.Fatalf("decode %s: %v", resourceName, err)
@@ -51,48 +112,43 @@ func newSchemaCompiler(t *testing.T) *jsonschema.Compiler {
 	return compiler
 }
 
-func TestSchemasCompile(t *testing.T) {
-	for _, filename := range schemaFiles {
-		t.Run(filename, func(t *testing.T) {
-			compiler := jsonschema.NewCompiler()
-			var targetURI string
-
-			for _, resourceName := range schemaFiles {
-				path := filepath.Join("..", "..", "..", "fixtures", "schemas", resourceName)
-				data, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatalf("read %s: %v", resourceName, err)
-				}
-
-				var document map[string]any
-				if err := json.Unmarshal(data, &document); err != nil {
-					t.Fatalf("decode %s: %v", resourceName, err)
-				}
-				if got := document["$schema"]; got != draft202012 {
-					t.Errorf("%s $schema = %v, want %q", resourceName, got, draft202012)
-				}
-				wantID := schemaIDBase + resourceName
-				if got := document["$id"]; got != wantID {
-					t.Errorf("%s $id = %v, want %q", resourceName, got, wantID)
-				}
-
-				uri := fmt.Sprintf("file://%s", path)
-				if err := compiler.AddResource(uri, document); err != nil {
-					t.Fatalf("add file URI for %s: %v", resourceName, err)
-				}
-				if err := compiler.AddResource(wantID, document); err != nil {
-					t.Fatalf("add canonical URI for %s: %v", resourceName, err)
-				}
-				if resourceName == filename {
-					targetURI = uri
-				}
-			}
-
-			if _, err := compiler.Compile(targetURI); err != nil {
-				t.Fatalf("compile %s: %v", filename, err)
-			}
-		})
+func TestSchemaDiscoveryMutation(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "new-malformed.schema.json"), []byte(`{"$schema":`), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	if err := compileSchemas(dir); err == nil {
+		t.Fatal("malformed newly discovered schema unexpectedly compiled")
+	}
+}
+
+func TestSchemasCompile(t *testing.T) {
+	files, err := discoverSchemaFiles(schemaDirectory())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := compileSchemas(schemaDirectory()); err != nil {
+		t.Fatal(err)
+	}
+	if !equalStringSets(files, schemaFiles) {
+		t.Fatalf("discovered schema files = %v, want closed contract set %v", files, schemaFiles)
+	}
+}
+
+func equalStringSets(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := make(map[string]bool, len(got))
+	for _, item := range got {
+		seen[item] = true
+	}
+	for _, item := range want {
+		if !seen[item] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestCasesValidate(t *testing.T) {
