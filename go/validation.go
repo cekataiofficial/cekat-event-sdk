@@ -59,7 +59,8 @@ func validateJSONValue(value reflect.Value, path string, ancestors map[visit]str
 		}
 		return nil
 	case reflect.Float32, reflect.Float64:
-		if number := value.Float(); math.IsNaN(number) || math.IsInf(number, 0) {
+		number := value.Float()
+		if math.IsNaN(number) || math.IsInf(number, 0) || (number == math.Trunc(number) && (number < -float64(maxSafeInteger) || number > float64(maxSafeInteger))) {
 			return invalidJSONValue(path)
 		}
 		return nil
@@ -156,77 +157,83 @@ func copyProperties(properties map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return copied.Interface().(map[string]any), nil
+	return copied.(map[string]any), nil
 }
 
-func copyJSONValue(value reflect.Value, ancestors map[visit]struct{}) (reflect.Value, error) {
+// copyJSONValue converts validated values to built-in types so encoding/json cannot
+// apply named-type or []byte-specific serialization rules.
+func copyJSONValue(value reflect.Value, ancestors map[visit]struct{}) (any, error) {
 	if !value.IsValid() {
-		return reflect.Value{}, nil
+		return nil, nil
 	}
 	if value.Kind() == reflect.Interface {
 		if value.IsNil() {
-			return reflect.Zero(value.Type()), nil
+			return nil, nil
 		}
-		copied, err := copyJSONValue(value.Elem(), ancestors)
-		if err != nil {
-			return reflect.Value{}, err
-		}
-		result := reflect.New(value.Type()).Elem()
-		result.Set(copied)
-		return result, nil
+		return copyJSONValue(value.Elem(), ancestors)
 	}
 
 	switch value.Kind() {
+	case reflect.Bool:
+		return value.Bool(), nil
+	case reflect.String:
+		return value.String(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return value.Int(), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int64(value.Uint()), nil
+	case reflect.Float32, reflect.Float64:
+		return value.Float(), nil
 	case reflect.Map:
 		if value.IsNil() {
-			return reflect.Zero(value.Type()), nil
+			return nil, nil
 		}
 		identity := visit{typ: value.Type(), ptr: value.Pointer()}
 		if _, seen := ancestors[identity]; seen {
-			return reflect.Value{}, &ValidationError{Message: "properties contains a cycle"}
+			return nil, &ValidationError{Message: "properties contains a cycle"}
 		}
 		ancestors[identity] = struct{}{}
 		defer delete(ancestors, identity)
-		copied := reflect.MakeMapWithSize(value.Type(), value.Len())
+		copied := make(map[string]any, value.Len())
 		iter := value.MapRange()
 		for iter.Next() {
 			entry, err := copyJSONValue(iter.Value(), ancestors)
 			if err != nil {
-				return reflect.Value{}, err
+				return nil, err
 			}
-			copied.SetMapIndex(iter.Key(), entry)
+			copied[iter.Key().String()] = entry
 		}
 		return copied, nil
 	case reflect.Slice:
 		if value.IsNil() {
-			return reflect.Zero(value.Type()), nil
+			return nil, nil
 		}
 		identity := visit{typ: value.Type(), ptr: value.Pointer()}
 		if _, seen := ancestors[identity]; seen {
-			return reflect.Value{}, &ValidationError{Message: "properties contains a cycle"}
+			return nil, &ValidationError{Message: "properties contains a cycle"}
 		}
 		ancestors[identity] = struct{}{}
 		defer delete(ancestors, identity)
-		copied := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		copied := make([]any, value.Len())
 		for index := 0; index < value.Len(); index++ {
 			entry, err := copyJSONValue(value.Index(index), ancestors)
 			if err != nil {
-				return reflect.Value{}, err
+				return nil, err
 			}
-			copied.Index(index).Set(entry)
+			copied[index] = entry
 		}
 		return copied, nil
 	case reflect.Array:
-		copied := reflect.New(value.Type()).Elem()
+		copied := make([]any, value.Len())
 		for index := 0; index < value.Len(); index++ {
 			entry, err := copyJSONValue(value.Index(index), ancestors)
 			if err != nil {
-				return reflect.Value{}, err
+				return nil, err
 			}
-			copied.Index(index).Set(entry)
+			copied[index] = entry
 		}
 		return copied, nil
 	default:
-		return value, nil
+		return nil, invalidJSONValue("properties")
 	}
 }

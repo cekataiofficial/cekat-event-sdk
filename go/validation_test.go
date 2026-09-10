@@ -1,11 +1,26 @@
 package cekat
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
 	"testing"
 )
+
+type namedBool bool
+type namedString string
+type namedInt int
+type namedUint uint
+type namedFloat float32
+type namedStringSlice []namedString
+type namedIntArray [2]namedInt
+type namedIntMap map[string]namedInt
+type namedJSONMarshaler string
+
+func (value namedJSONMarshaler) MarshalJSON() ([]byte, error) {
+	return json.Marshal("marshaler escape: " + string(value))
+}
 
 func TestValidateEvent(t *testing.T) {
 	validEvent := Event{
@@ -31,6 +46,8 @@ func TestValidateEvent(t *testing.T) {
 		{name: "negative infinity", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"risk": math.Inf(-1)}}, wantPath: "properties.risk"},
 		{name: "unsafe positive integer", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": int64(9007199254740992)}}, wantPath: "properties.id"},
 		{name: "unsafe negative integer", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": int64(-9007199254740992)}}, wantPath: "properties.id"},
+		{name: "unsafe positive integral float", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": float64(9007199254740992)}}, wantPath: "properties.id"},
+		{name: "unsafe negative integral float", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": float64(-9007199254740992)}}, wantPath: "properties.id"},
 		{name: "function", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": func() {}}}, wantPath: "properties.secret"},
 		{name: "channel", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": make(chan int)}}, wantPath: "properties.secret"},
 		{name: "complex", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": complex(1, 2)}}, wantPath: "properties.secret"},
@@ -131,6 +148,79 @@ func TestBuildPayloadRejectsInvalidEvent(t *testing.T) {
 	if _, err := buildPayload("order_paid", true, Event{ContactName: "Ada"}); err == nil {
 		t.Fatal("buildPayload() error = nil, want identity validation error")
 	}
+}
+
+func TestBuildPayloadNormalizesPropertiesForJSON(t *testing.T) {
+	raw := json.RawMessage(`{"raw":true}`)
+	payload, err := buildPayload("order_paid", true, Event{
+		Email: "ada@example.test",
+		Properties: map[string]any{
+			"bytes":     []byte{1, 2},
+			"raw":       raw,
+			"marshaler": namedJSONMarshaler("original"),
+			"bool":      namedBool(true),
+			"string":    namedString("sku"),
+			"int":       namedInt(42),
+			"uint":      namedUint(43),
+			"float":     namedFloat(1.5),
+			"slice":     namedStringSlice{"first", "second"},
+			"array":     namedIntArray{7, 8},
+			"map":       namedIntMap{"count": 3},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildPayload() error = %v", err)
+	}
+
+	if _, ok := payload.Properties["bytes"].([]any); !ok {
+		t.Fatalf("bytes type = %T, want []any", payload.Properties["bytes"])
+	}
+	if _, ok := payload.Properties["raw"].([]any); !ok {
+		t.Fatalf("raw type = %T, want []any", payload.Properties["raw"])
+	}
+	if _, ok := payload.Properties["map"].(map[string]any); !ok {
+		t.Fatalf("map type = %T, want map[string]any", payload.Properties["map"])
+	}
+	if got, want := payload.Properties["marshaler"], any("original"); got != want {
+		t.Errorf("normalized marshaler = %#v, want %#v", got, want)
+	}
+	if got, want := payload.Properties["int"], any(int64(42)); got != want {
+		t.Errorf("normalized int = %#v, want %#v", got, want)
+	}
+	if got, want := payload.Properties["uint"], any(int64(43)); got != want {
+		t.Errorf("normalized uint = %#v, want %#v", got, want)
+	}
+	if got, want := payload.Properties["float"], any(float64(1.5)); got != want {
+		t.Errorf("normalized float = %#v, want %#v", got, want)
+	}
+
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal(payload) error = %v", err)
+	}
+	var got any
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("json.Unmarshal(payload) error = %v", err)
+	}
+	var want any
+	if err := json.Unmarshal([]byte(`{"event_key":"order_paid","email":"ada@example.test","is_common":true,"properties":{"array":[7,8],"bool":true,"bytes":[1,2],"float":1.5,"int":42,"map":{"count":3},"marshaler":"original","raw":[123,34,114,97,119,34,58,116,114,117,101,125],"slice":["first","second"],"string":"sku","uint":43}}`), &want); err != nil {
+		t.Fatalf("json.Unmarshal(want) error = %v", err)
+	}
+	if !jsonValuesEqual(got, want) {
+		t.Errorf("json.Marshal(payload) = %s, want canonical JSON", encoded)
+	}
+}
+
+func jsonValuesEqual(got, want any) bool {
+	gotJSON, err := json.Marshal(got)
+	if err != nil {
+		return false
+	}
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		return false
+	}
+	return string(gotJSON) == string(wantJSON)
 }
 
 func FuzzValidateProperties(f *testing.F) {
