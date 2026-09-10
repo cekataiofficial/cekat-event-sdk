@@ -33,21 +33,44 @@ PASS
 $ go test -shuffle=on -count=20 ./...
 PASS
 
-$ cd conformance/mock-ingest-server && go build -o /tmp/cekat-mock ./cmd/mock-ingest-server
-$ CEKAT_CONFORMANCE_BASE_URL=... CEKAT_CONFORMANCE_CONTROL_URL=... \
-  CEKAT_CONFORMANCE_ACCESS_TOKEN=conformance-token \
-  CEKAT_CONFORMANCE_FIXTURES="$PWD/conformance/fixtures/cases" \
-  go/scripts/conformance
+$ (
+    cd conformance/mock-ingest-server
+    go build -o /tmp/cekat-mock ./cmd/mock-ingest-server
+    : > /tmp/cekat-mock.ready
+    /tmp/cekat-mock --listen 127.0.0.1:0 > /tmp/cekat-mock.ready 2>/tmp/cekat-mock.err & mock_pid=$!
+    trap 'kill "$mock_pid" 2>/dev/null || true; wait "$mock_pid" 2>/dev/null || true' EXIT
+    for _ in $(seq 1 200); do [ -s /tmp/cekat-mock.ready ] && break; kill -0 "$mock_pid" 2>/dev/null || exit 1; sleep 0.05; done
+    read -r base_url control_url <<EOF
+$(python3 -c 'import json; r=json.loads(open("/tmp/cekat-mock.ready").readline()); print(r["base_url"], r["control_url"])')
+EOF
+    cd ../..
+    CEKAT_CONFORMANCE_BASE_URL="$base_url" \
+    CEKAT_CONFORMANCE_CONTROL_URL="$control_url" \
+    CEKAT_CONFORMANCE_ACCESS_TOKEN=conformance-token \
+    CEKAT_CONFORMANCE_FIXTURES="$PWD/conformance/fixtures/cases" \
+      go/scripts/conformance
+  )
 PASS (all 49 fixtures)
 
 $ cd go && go list ./... | xargs -n1 go doc
 PASS (9 packages documented)
 
-$ out=$(mktemp -d); go/scripts/package --version 0.1.0 --output "$out"
-PASS
-
-$ python3 manifest validation
-PASS (schema 1, Go 0.1.0, sorted artifact path, exact size, lowercase SHA-256)
+$ cd go
+$ out="$(mktemp -d)"
+$ scripts/package --version 0.1.0 --output "$out"
+$ python3 - "$out/manifest.json" <<'PY'
+import hashlib, json, pathlib, sys
+manifest = json.load(open(sys.argv[1]))
+assert manifest["schema_version"] == 1
+assert manifest["language"] == "go" and manifest["version"] == "0.1.0"
+assert [x["path"] for x in manifest["artifacts"]] == sorted(x["path"] for x in manifest["artifacts"])
+root = pathlib.Path(sys.argv[1]).parent
+for item in manifest["artifacts"]:
+    data = (root / item["path"]).read_bytes()
+    assert len(data) == item["size_bytes"]
+    assert hashlib.sha256(data).hexdigest() == item["sha256"]
+PY
+PASS (package wrapper, schema 1, Go 0.1.0, sorted artifact path, exact size, lowercase SHA-256)
 ```
 
 The package wrapper ran its nested `go test ./...` and `go vet ./...` before producing the archive. Archive inspection showed only allowlisted source/documentation/module/script paths.
