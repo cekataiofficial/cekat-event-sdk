@@ -1,6 +1,7 @@
 package cekat
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"reflect"
@@ -129,7 +130,7 @@ func propertyPath(parent, key string) string {
 	return parent + "." + key
 }
 
-func buildPayload(eventKey string, isCommon bool, event Event) (wirePayload, error) {
+func buildPayload(ctx context.Context, eventKey string, isCommon bool, event Event) (wirePayload, error) {
 	if err := validateEvent(eventKey, event); err != nil {
 		return wirePayload{}, err
 	}
@@ -138,12 +139,17 @@ func buildPayload(eventKey string, isCommon bool, event Event) (wirePayload, err
 	if err != nil {
 		return wirePayload{}, err
 	}
+	visitorID := strings.TrimSpace(event.VisitorID)
+	if visitorID == "" {
+		visitorID, _ = VisitorIDFromContext(ctx)
+	}
+
 	return wirePayload{
 		EventKey:    eventKey,
 		ContactName: event.ContactName,
 		PhoneNumber: event.PhoneNumber,
 		Email:       event.Email,
-		VisitorID:   event.VisitorID,
+		VisitorID:   visitorID,
 		IsCommon:    isCommon,
 		Properties:  properties,
 	}, nil

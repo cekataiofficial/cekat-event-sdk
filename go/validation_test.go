@@ -1,6 +1,7 @@
 package cekat
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -115,7 +116,7 @@ func TestBuildPayloadPreservesIdentityWhitespaceAndCopiesProperties(t *testing.T
 		Properties:  properties,
 	}
 
-	payload, err := buildPayload(" custom_event ", false, event)
+	payload, err := buildPayload(context.Background(), " custom_event ", false, event)
 	if err != nil {
 		t.Fatalf("buildPayload() error = %v", err)
 	}
@@ -134,8 +135,8 @@ func TestBuildPayloadPreservesIdentityWhitespaceAndCopiesProperties(t *testing.T
 	if got, want := payload.ContactName, event.ContactName; got != want {
 		t.Errorf("ContactName = %q, want unchanged %q", got, want)
 	}
-	if got, want := payload.VisitorID, event.VisitorID; got != want {
-		t.Errorf("VisitorID = %q, want unchanged %q", got, want)
+	if got, want := payload.VisitorID, "visitor-id"; got != want {
+		t.Errorf("VisitorID = %q, want trimmed %q", got, want)
 	}
 
 	properties["order"].(map[string]any)["items"].([]any)[0] = "changed"
@@ -145,14 +146,14 @@ func TestBuildPayloadPreservesIdentityWhitespaceAndCopiesProperties(t *testing.T
 }
 
 func TestBuildPayloadRejectsInvalidEvent(t *testing.T) {
-	if _, err := buildPayload("order_paid", true, Event{ContactName: "Ada"}); err == nil {
+	if _, err := buildPayload(context.Background(), "order_paid", true, Event{ContactName: "Ada"}); err == nil {
 		t.Fatal("buildPayload() error = nil, want identity validation error")
 	}
 }
 
 func TestBuildPayloadNormalizesPropertiesForJSON(t *testing.T) {
 	raw := json.RawMessage(`{"raw":true}`)
-	payload, err := buildPayload("order_paid", true, Event{
+	payload, err := buildPayload(context.Background(), "order_paid", true, Event{
 		Email: "ada@example.test",
 		Properties: map[string]any{
 			"bytes":     []byte{1, 2},

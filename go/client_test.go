@@ -1,6 +1,7 @@
 package cekat
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sync"
@@ -25,6 +26,34 @@ func (rt *countingRoundTripper) Calls() int {
 	return rt.calls
 }
 
+func TestPayloadVisitorPrecedence(t *testing.T) {
+	tests := []struct {
+		name     string
+		explicit string
+		context  string
+		want     string
+	}{
+		{name: "trimmed explicit visitor takes precedence", explicit: "  event-visitor  ", context: "context-visitor", want: "event-visitor"},
+		{name: "blank explicit visitor falls back to context", explicit: " \t ", context: "context-visitor", want: "context-visitor"},
+		{name: "no visitor omits payload visitor", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload, err := buildPayload(WithVisitorID(context.Background(), test.context), "order_paid", true, Event{
+				Email:     "ada@example.test",
+				VisitorID: test.explicit,
+			})
+			if err != nil {
+				t.Fatalf("buildPayload() error = %v", err)
+			}
+			if payload.VisitorID != test.want {
+				t.Errorf("payload.VisitorID = %q, want %q", payload.VisitorID, test.want)
+			}
+		})
+	}
+}
+
 func TestBuildPayloadValidationPrecedesRoundTripper(t *testing.T) {
 	roundTripper := &countingRoundTripper{}
 	client, err := New("access-token", WithHTTPClient(&http.Client{Transport: roundTripper}))
@@ -40,7 +69,7 @@ func TestBuildPayloadValidationPrecedesRoundTripper(t *testing.T) {
 		{Email: "ada@example.test", Properties: map[string]any{"secret": func() {}}},
 	}
 	for _, event := range invalidEvents {
-		_, err := buildPayload("order_paid", true, event)
+		_, err := buildPayload(context.Background(), "order_paid", true, event)
 		var validationErr *ValidationError
 		if !errors.As(err, &validationErr) {
 			t.Fatalf("buildPayload() error = %T %v, want *ValidationError", err, err)
