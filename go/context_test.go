@@ -27,9 +27,24 @@ func TestVisitorIDContext(t *testing.T) {
 	if got, ok := VisitorIDFromContext(context.Background()); got != "" || ok {
 		t.Errorf("VisitorIDFromContext() = (%q, %t), want (empty string, false) for missing visitor", got, ok)
 	}
+	if got, ok := VisitorIDFromContext(nil); got != "" || ok {
+		t.Errorf("VisitorIDFromContext(nil) = (%q, %t), want (empty string, false)", got, ok)
+	}
+
+	contextFromNil := WithVisitorID(nil, "  visitor-from-nil  ")
+	if contextFromNil == nil {
+		t.Fatal("WithVisitorID(nil, nonblank) returned nil")
+	}
+	if got, ok := VisitorIDFromContext(contextFromNil); got != "visitor-from-nil" || !ok {
+		t.Errorf("VisitorIDFromContext(WithVisitorID(nil, nonblank)) = (%q, %t), want (%q, true)", got, ok, "visitor-from-nil")
+	}
 }
 
 func TestVisitorFromRequest(t *testing.T) {
+	if got := WithVisitorFromRequest(nil); got != nil {
+		t.Errorf("WithVisitorFromRequest(nil) = %v, want nil", got)
+	}
+
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.Header.Set("X-Cekat-Visitor-ID", "  header-visitor  ")
 	request.AddCookie(&http.Cookie{Name: "_cekat_visitor_id", Value: "cookie-visitor"})

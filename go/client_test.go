@@ -54,6 +54,19 @@ func TestPayloadVisitorPrecedence(t *testing.T) {
 	}
 }
 
+func TestBuildPayloadNilContextOmitsBlankVisitor(t *testing.T) {
+	payload, err := buildPayload(nil, "order_paid", true, Event{
+		Email:     "ada@example.test",
+		VisitorID: " \t ",
+	})
+	if err != nil {
+		t.Fatalf("buildPayload() error = %v", err)
+	}
+	if payload.VisitorID != "" {
+		t.Errorf("payload.VisitorID = %q, want empty string", payload.VisitorID)
+	}
+}
+
 func TestBuildPayloadValidationPrecedesRoundTripper(t *testing.T) {
 	roundTripper := &countingRoundTripper{}
 	client, err := New("access-token", WithHTTPClient(&http.Client{Transport: roundTripper}))
