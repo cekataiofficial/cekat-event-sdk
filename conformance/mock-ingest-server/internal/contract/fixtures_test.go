@@ -9,7 +9,94 @@ import (
 	"testing"
 )
 
-const fixturesPattern = "../../../fixtures/cases/*.json"
+const (
+	fixturesPattern          = "../../../fixtures/cases/*.json"
+	conformanceReadmePath    = "../../../README.md"
+	conformanceCaseSchemaURI = schemaIDBase + "conformance-case.schema.json"
+)
+
+func TestConformanceReadmeContract(t *testing.T) {
+	readme, err := os.ReadFile(conformanceReadmePath)
+	if err != nil {
+		t.Fatalf("read conformance README: %v", err)
+	}
+
+	contents := string(readme)
+	for _, required := range []string{
+		"CEKAT_CONFORMANCE_BASE_URL",
+		"CEKAT_CONFORMANCE_CONTROL_URL",
+		"CEKAT_CONFORMANCE_ACCESS_TOKEN",
+		"CEKAT_CONFORMANCE_FIXTURES",
+		"go/scripts/conformance",
+		"node/scripts/conformance",
+		"python/scripts/conformance",
+		"php/scripts/conformance",
+		"java/scripts/conformance",
+		"dotnet/scripts/conformance",
+		"ruby/scripts/conformance",
+		"POST /api/events/ingest",
+		"10 seconds per network attempt",
+		"Default retry count is 2 after the initial attempt",
+		"[0,100ms]",
+		"[0,200ms]",
+		"65,536",
+		`{"success":true,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`,
+		`{"success":false,"error":"defined server error","code":"fixture_code"}`,
+		"POST /__control/reset",
+		"POST /__control/responses",
+		"GET /__control/requests",
+		"before_request",
+		"during_request",
+		"during_backoff",
+		`"inapplicable_languages":["php","ruby"]`,
+		"Unknown fixture forms cannot be skipped",
+		"Applicable cases cannot be skipped",
+		"schema-declared `not_applicable`",
+		"simulates transport behavior but does not decide SDK error types",
+		"must not disclose the access token",
+		"COMPATIBILITY.md",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Errorf("conformance README must document %q", required)
+		}
+	}
+}
+
+func TestConformanceFixtureIntegrity(t *testing.T) {
+	compiler := newSchemaCompiler(t)
+	schema, err := compiler.Compile(conformanceCaseSchemaURI)
+	if err != nil {
+		t.Fatalf("compile conformance case schema: %v", err)
+	}
+
+	cancellationIDs := map[string]bool{
+		"cancellation-before-request": true,
+		"cancellation-during-request": true,
+		"cancellation-during-backoff": true,
+	}
+	for path, fixture := range loadCases(t) {
+		if err := schema.Validate(fixture); err != nil {
+			t.Errorf("validate %s: %v", path, err)
+		}
+
+		id, _ := fixture["id"].(string)
+		applicability, declared := fixture["applicability"]
+		if !declared {
+			if cancellationIDs[id] {
+				t.Errorf("%s must declare caller_cancellation applicability", path)
+			}
+			continue
+		}
+		if !cancellationIDs[id] {
+			t.Errorf("%s declares applicability outside the cancellation cases", path)
+			continue
+		}
+		app, ok := applicability.(map[string]any)
+		if !ok || !equalJSON(app["requires_capabilities"], []any{"caller_cancellation"}) || !equalJSON(app["inapplicable_languages"], []any{"php", "ruby"}) {
+			t.Errorf("%s applicability = %v, want caller_cancellation with only php and ruby inapplicable", path, applicability)
+		}
+	}
+}
 
 func loadCases(t *testing.T) map[string]map[string]any {
 	t.Helper()
