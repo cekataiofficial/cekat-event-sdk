@@ -49,18 +49,18 @@ func run(arguments []string, stdout, stderr *os.File) int {
 	}
 	defer listener.Close()
 
-	origin := "http://" + listener.Addr().String()
-	if err := json.NewEncoder(stdout).Encode(readiness{BaseURL: origin, ControlURL: origin}); err != nil {
-		fmt.Fprintf(stderr, "mock-ingest-server: write readiness: %v\n", err)
-		return 1
-	}
-
 	httpServer := &http.Server{Handler: server.New(state.New())}
 	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
 	serveResult := make(chan error, 1)
 	go func() { serveResult <- httpServer.Serve(listener) }()
+
+	origin := "http://" + listener.Addr().String()
+	if err := json.NewEncoder(stdout).Encode(readiness{BaseURL: origin, ControlURL: origin}); err != nil {
+		fmt.Fprintf(stderr, "mock-ingest-server: write readiness: %v\n", err)
+		return 1
+	}
 
 	select {
 	case err := <-serveResult:
@@ -71,10 +71,19 @@ func run(arguments []string, stdout, stderr *os.File) int {
 		return 1
 	case <-signalContext.Done():
 		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdownContext); err != nil {
-			fmt.Fprintf(stderr, "mock-ingest-server: shutdown: %v\n", err)
-			return 1
+		shutdownErr := httpServer.Shutdown(shutdownContext)
+		cancel()
+		if shutdownErr != nil {
+			if !errors.Is(shutdownErr, context.DeadlineExceeded) {
+				fmt.Fprintf(stderr, "mock-ingest-server: shutdown: %v\n", shutdownErr)
+				return 1
+			}
+			// Shutdown does not cancel active request contexts. Close them after the
+			// graceful bound so signal-driven termination remains bounded and clean.
+			if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				fmt.Fprintf(stderr, "mock-ingest-server: close: %v\n", err)
+				return 1
+			}
 		}
 		if err := <-serveResult; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(stderr, "mock-ingest-server: serve: %v\n", err)

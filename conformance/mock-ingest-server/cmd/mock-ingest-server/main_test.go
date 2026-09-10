@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -21,12 +23,15 @@ type mockProcess struct {
 	lines    <-chan string
 	scanErrs <-chan error
 	stderr   *bytes.Buffer
+
+	mu     sync.Mutex
+	reaped bool
 }
 
 func TestProcessContract(t *testing.T) {
 	binary := buildCommand(t)
-	process := startProcess(t, binary)
-	defer process.stop(t)
+	process := startProcess(t, binary, "--listen", "127.0.0.1:0")
+	defer process.stop(t, syscall.SIGTERM)
 
 	assertReadiness(t, process.ready)
 	process.assertNoAdditionalStdout(t)
@@ -66,15 +71,69 @@ func TestProcessContract(t *testing.T) {
 		t.Fatalf("unexpected journal: status=%d entries=%+v", journalResponse.StatusCode, journal.Requests)
 	}
 
-	process.stop(t)
+	process.stop(t, syscall.SIGTERM)
+}
+
+func TestDefaultListenerBehavior(t *testing.T) {
+	process := startProcess(t, buildCommand(t))
+	defer process.stop(t, syscall.SIGTERM)
+
+	assertReadiness(t, process.ready)
+	address, err := url.Parse(process.ready.BaseURL)
+	if err != nil {
+		t.Fatalf("parse default base URL: %v", err)
+	}
+	host, port, err := net.SplitHostPort(address.Host)
+	if err != nil || host != "127.0.0.1" || port == "0" || port == "" {
+		t.Fatalf("default listener = %q; want ephemeral 127.0.0.1 address", address.Host)
+	}
+}
+
+func TestSignalShutdown(t *testing.T) {
+	binary := buildCommand(t)
+	for _, signal := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
+		t.Run(signal.String(), func(t *testing.T) {
+			process := startProcess(t, binary, "--listen", "127.0.0.1:0")
+			defer process.stop(t, signal)
+			process.stop(t, signal)
+		})
+	}
+}
+
+func TestSignalDuringDelayedInFlightRequestExitsCleanly(t *testing.T) {
+	binary := buildCommand(t)
+	for _, signal := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
+		t.Run(signal.String(), func(t *testing.T) {
+			process := startProcess(t, binary, "--listen", "127.0.0.1:0")
+			defer process.stop(t, signal)
+			post(t, process.ready.ControlURL+"/__control/responses", `{"responses":[{"status":200,"body":"late","delay_ms":10000}]}`)
+
+			requestDone := make(chan error, 1)
+			go func() {
+				response, err := http.Post(process.ready.BaseURL+"/api/events/ingest", "application/json", strings.NewReader(`{}`))
+				if response != nil {
+					response.Body.Close()
+				}
+				requestDone <- err
+			}()
+			awaitJournalLength(t, process.ready.ControlURL, 1)
+
+			process.stopWithin(t, signal, 6*time.Second)
+			select {
+			case <-requestDone:
+			case <-time.After(time.Second):
+				t.Fatal("in-flight request did not finish after forced close")
+			}
+		})
+	}
 }
 
 func TestProcessesHaveIsolatedState(t *testing.T) {
 	binary := buildCommand(t)
-	first := startProcess(t, binary)
-	defer first.stop(t)
-	second := startProcess(t, binary)
-	defer second.stop(t)
+	first := startProcess(t, binary, "--listen", "127.0.0.1:0")
+	defer first.stop(t, syscall.SIGTERM)
+	second := startProcess(t, binary, "--listen", "127.0.0.1:0")
+	defer second.stop(t, syscall.SIGTERM)
 
 	post(t, first.ready.ControlURL+"/__control/responses", `{"responses":[{"status":202,"body":"first"}]}`)
 	post(t, second.ready.ControlURL+"/__control/responses", `{"responses":[{"status":203,"body":"second"}]}`)
@@ -85,17 +144,25 @@ func TestProcessesHaveIsolatedState(t *testing.T) {
 	assertJournalLength(t, second.ready.ControlURL, 1)
 }
 
-func TestInvalidFlagsAndListenReportErrors(t *testing.T) {
+func TestInvalidFlagsAndListenReportErrorsOnStderr(t *testing.T) {
 	binary := buildCommand(t)
 	for _, arguments := range [][]string{{"--unknown"}, {"--listen", "not a listener"}} {
 		t.Run(strings.Join(arguments, " "), func(t *testing.T) {
 			command := exec.Command(binary, arguments...)
-			output, err := command.CombinedOutput()
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			command.Stdout = stdout
+			command.Stderr = stderr
+			err := command.Run()
 			if err == nil {
 				t.Fatalf("arguments %q unexpectedly succeeded", arguments)
 			}
-			if len(output) == 0 || !strings.Contains(strings.ToLower(string(output)), "listen") && !strings.Contains(strings.ToLower(string(output)), "flag") {
-				t.Fatalf("arguments %q produced no useful diagnostic: %q", arguments, output)
+			if stdout.Len() != 0 {
+				t.Fatalf("arguments %q wrote stdout: %q", arguments, stdout.String())
+			}
+			diagnostic := strings.ToLower(stderr.String())
+			if diagnostic == "" || !strings.Contains(diagnostic, "listen") && !strings.Contains(diagnostic, "flag") {
+				t.Fatalf("arguments %q produced no useful stderr diagnostic: %q", arguments, stderr.String())
 			}
 		})
 	}
@@ -112,9 +179,9 @@ func buildCommand(t *testing.T) string {
 	return binary
 }
 
-func startProcess(t *testing.T, binary string) *mockProcess {
+func startProcess(t *testing.T, binary string, arguments ...string) *mockProcess {
 	t.Helper()
-	command := exec.Command(binary, "--listen", "127.0.0.1:0")
+	command := exec.Command(binary, arguments...)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatalf("open stdout: %v", err)
@@ -124,6 +191,9 @@ func startProcess(t *testing.T, binary string) *mockProcess {
 	if err := command.Start(); err != nil {
 		t.Fatalf("start command: %v", err)
 	}
+
+	process := &mockProcess{cmd: command, stderr: stderr}
+	t.Cleanup(process.cleanup)
 
 	lines := make(chan string, 2)
 	scanErrs := make(chan error, 1)
@@ -140,16 +210,18 @@ func startProcess(t *testing.T, binary string) *mockProcess {
 	case line := <-lines:
 		var ready readiness
 		if err := json.Unmarshal([]byte(line), &ready); err != nil {
-			_ = command.Process.Kill()
+			process.forceReap()
 			t.Fatalf("decode readiness %q: %v; stderr: %s", line, err, stderr.String())
 		}
-		return &mockProcess{cmd: command, ready: ready, lines: lines, scanErrs: scanErrs, stderr: stderr}
+		process.ready = ready
+		process.lines = lines
+		process.scanErrs = scanErrs
+		return process
 	case err := <-scanErrs:
-		_ = command.Wait()
+		_ = process.reap()
 		t.Fatalf("command exited before readiness: %v; stderr: %s", err, stderr.String())
 	case <-time.After(5 * time.Second):
-		_ = command.Process.Kill()
-		_ = command.Wait()
+		process.forceReap()
 		t.Fatalf("timed out waiting for readiness; stderr: %s", stderr.String())
 	}
 	return nil
@@ -167,20 +239,26 @@ func (process *mockProcess) assertNoAdditionalStdout(t *testing.T) {
 	}
 }
 
-func (process *mockProcess) stop(t *testing.T) {
+func (process *mockProcess) stop(t *testing.T, signal syscall.Signal) {
 	t.Helper()
-	if process.cmd.ProcessState != nil && process.cmd.ProcessState.Exited() {
+	process.stopWithin(t, signal, 6*time.Second)
+}
+
+func (process *mockProcess) stopWithin(t *testing.T, signal syscall.Signal, timeout time.Duration) {
+	t.Helper()
+	if process.isReaped() {
 		return
 	}
-	if err := process.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatalf("send SIGTERM: %v", err)
+	if err := process.cmd.Process.Signal(signal); err != nil {
+		process.forceReap()
+		t.Fatalf("send %s: %v", signal, err)
 	}
 	wait := make(chan error, 1)
-	go func() { wait <- process.cmd.Wait() }()
+	go func() { wait <- process.reap() }()
 	select {
 	case err := <-wait:
 		if err != nil {
-			t.Fatalf("command did not exit cleanly: %v; stderr: %s", err, process.stderr.String())
+			t.Fatalf("command did not exit cleanly after %s: %v; stderr: %s", signal, err, process.stderr.String())
 		}
 		for line := range process.lines {
 			t.Fatalf("unexpected stdout after readiness: %q", line)
@@ -188,11 +266,42 @@ func (process *mockProcess) stop(t *testing.T) {
 		if err := <-process.scanErrs; err != nil {
 			t.Fatalf("read command stdout: %v", err)
 		}
-	case <-time.After(6 * time.Second):
+	case <-time.After(timeout):
 		_ = process.cmd.Process.Kill()
-		_ = process.cmd.Wait()
-		t.Fatal("command did not exit within six seconds after SIGTERM")
+		if err := <-wait; err != nil {
+			t.Fatalf("command did not exit within %s after %s: %v", timeout, signal, err)
+		}
+		t.Fatalf("command did not exit within %s after %s", timeout, signal)
 	}
+}
+
+func (process *mockProcess) cleanup() {
+	process.forceReap()
+}
+
+func (process *mockProcess) forceReap() {
+	if process.isReaped() {
+		return
+	}
+	_ = process.cmd.Process.Kill()
+	_ = process.reap()
+}
+
+func (process *mockProcess) isReaped() bool {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	return process.reaped
+}
+
+func (process *mockProcess) reap() error {
+	process.mu.Lock()
+	if process.reaped {
+		process.mu.Unlock()
+		return nil
+	}
+	process.reaped = true
+	process.mu.Unlock()
+	return process.cmd.Wait()
 }
 
 func assertReadiness(t *testing.T, ready readiness) {
@@ -252,4 +361,24 @@ func assertJournalLength(t *testing.T, controlURL string, want int) {
 	if len(journal.Requests) != want {
 		t.Fatalf("journal length=%d, want %d", len(journal.Requests), want)
 	}
+}
+
+func awaitJournalLength(t *testing.T, controlURL string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		response, err := http.Get(controlURL + "/__control/requests")
+		if err == nil {
+			var journal struct {
+				Requests []json.RawMessage `json:"requests"`
+			}
+			decodeErr := json.NewDecoder(response.Body).Decode(&journal)
+			response.Body.Close()
+			if decodeErr == nil && len(journal.Requests) == want {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("journal did not reach length %d", want)
 }
