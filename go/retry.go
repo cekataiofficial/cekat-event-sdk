@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+const (
+	initialRetryMaximum = 100 * time.Millisecond
+	maximumRetryMaximum = time.Second
+)
+
 func defaultSleep(ctx context.Context, duration time.Duration) error {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
@@ -15,6 +20,18 @@ func defaultSleep(ctx context.Context, duration time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// retryMaximum returns the capped exponential maximum for the given
+// one-indexed retry. The cap prevents duration and shift overflow.
+func retryMaximum(attempt int) time.Duration {
+	if attempt <= 1 {
+		return initialRetryMaximum
+	}
+	if attempt >= 5 {
+		return maximumRetryMaximum
+	}
+	return initialRetryMaximum << (attempt - 1)
 }
 
 func fullJitter(max time.Duration) time.Duration {

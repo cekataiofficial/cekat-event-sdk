@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 )
 
 const ingestPath = "/api/events/ingest"
@@ -47,7 +46,9 @@ func (c *Client) track(ctx context.Context, eventKey string, isCommon bool, even
 }
 
 func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledgement, error) {
-	for attempt := 1; attempt <= 1+c.config.retryCount; attempt++ {
+	attempt := 1
+	retriesRemaining := c.config.retryCount
+	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -58,15 +59,18 @@ func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledge
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !retryable || attempt == 1+c.config.retryCount {
+		if !retryable || retriesRemaining == 0 {
 			return nil, err
 		}
 		max := retryMaximum(attempt)
 		if err := c.config.sleep(ctx, c.config.jitter(max)); err != nil {
 			return nil, ctx.Err()
 		}
+		retriesRemaining--
+		if attempt < int(^uint(0)>>1) {
+			attempt++
+		}
 	}
-	panic("unreachable")
 }
 
 func (c *Client) doAttempt(ctx context.Context, payload wirePayload, attempt int) (*Acknowledgement, error, bool) {
@@ -83,7 +87,11 @@ func (c *Client) doAttempt(ctx context.Context, payload wirePayload, attempt int
 	request.Header.Set("Authorization", "Bearer "+c.accessToken)
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := c.config.httpClient.Do(request)
+	httpClient := *c.config.httpClient
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	response, err := httpClient.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err(), false
@@ -102,8 +110,4 @@ func (c *Client) doAttempt(ctx context.Context, payload wirePayload, attempt int
 		return nil, err, response.StatusCode == http.StatusInternalServerError
 	}
 	return acknowledgement, nil, false
-}
-
-func retryMaximum(attempt int) time.Duration {
-	return 100 * time.Millisecond * time.Duration(1<<(attempt-1))
 }

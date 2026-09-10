@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -66,7 +68,7 @@ func newScriptedClient(t *testing.T, roundTripper http.RoundTripper, options ...
 }
 
 func TestFullJitterBounds(t *testing.T) {
-	for _, max := range []time.Duration{time.Nanosecond, 100 * time.Millisecond, 200 * time.Millisecond} {
+	for _, max := range []time.Duration{time.Nanosecond, 100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond, 800 * time.Millisecond, time.Second} {
 		for range 1000 {
 			if got := fullJitter(max); got < 0 || got > max {
 				t.Errorf("fullJitter(%v) = %v, want value in [0, %v]", max, got, max)
@@ -75,6 +77,65 @@ func TestFullJitterBounds(t *testing.T) {
 	}
 	if got := fullJitter(0); got != 0 {
 		t.Errorf("fullJitter(0) = %v, want 0", got)
+	}
+}
+
+func TestRetryMaximumSaturates(t *testing.T) {
+	for _, test := range []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{attempt: 1, want: 100 * time.Millisecond},
+		{attempt: 2, want: 200 * time.Millisecond},
+		{attempt: 3, want: 400 * time.Millisecond},
+		{attempt: 4, want: 800 * time.Millisecond},
+		{attempt: 5, want: time.Second},
+		{attempt: 38, want: time.Second},
+		{attempt: math.MaxInt, want: time.Second},
+	} {
+		if got := retryMaximum(test.attempt); got != test.want {
+			t.Errorf("retryMaximum(%d) = %v, want %v", test.attempt, got, test.want)
+		}
+	}
+}
+
+func TestConfiguredRetryCountUsesSaturatedMaxima(t *testing.T) {
+	roundTripper := &scriptedRoundTripper{steps: []scriptedStep{
+		{status: http.StatusInternalServerError, body: `{"success":false,"error":"temporary"}`},
+		{status: http.StatusInternalServerError, body: `{"success":false,"error":"temporary"}`},
+		{status: http.StatusInternalServerError, body: `{"success":false,"error":"temporary"}`},
+		{status: http.StatusInternalServerError, body: `{"success":false,"error":"temporary"}`},
+		{status: http.StatusInternalServerError, body: `{"success":false,"error":"temporary"}`},
+		{status: http.StatusInternalServerError, body: `{"success":false,"error":"final"}`},
+	}}
+	client := newScriptedClient(t, roundTripper, WithRetryCount(5))
+	var maxima []time.Duration
+	client.config.jitter = func(max time.Duration) time.Duration { maxima = append(maxima, max); return 0 }
+	client.config.sleep = func(context.Context, time.Duration) error { return nil }
+
+	_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+	var apiErr *ApiError
+	if !errors.As(err, &apiErr) || apiErr.Attempts != 6 {
+		t.Errorf("OrderPaid() error = %#v, want final *ApiError at attempt 6", err)
+	}
+	want := []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond, 800 * time.Millisecond, time.Second}
+	if !slices.Equal(maxima, want) {
+		t.Errorf("jitter maxima = %v, want %v", maxima, want)
+	}
+}
+
+func TestMaxRetryCountCancellationDoesNotAttemptOrOverflow(t *testing.T) {
+	roundTripper := &scriptedRoundTripper{}
+	client := newScriptedClient(t, roundTripper, WithRetryCount(math.MaxInt))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := client.OrderPaid(ctx, Event{Email: "ada@example.test"})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("OrderPaid() error = %v, want context.Canceled", err)
+	}
+	if got := roundTripper.Calls(); got != 0 {
+		t.Errorf("attempts = %d, want 0", got)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -192,6 +193,58 @@ func TestClientRequestConstructionAndResponseClose(t *testing.T) {
 	}
 	if !body.closed {
 		t.Error("response body was not closed")
+	}
+}
+
+func TestClientDoesNotFollowRedirects(t *testing.T) {
+	for _, status := range []int{http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			initialRequests := 0
+			redirectTargetRequests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case ingestPath:
+					initialRequests++
+					if request.Method != http.MethodPost {
+						t.Errorf("initial request method = %s, want POST", request.Method)
+					}
+					http.Redirect(writer, request, "/redirect-target", status)
+				case "/redirect-target":
+					redirectTargetRequests++
+					writer.WriteHeader(http.StatusOK)
+				default:
+					t.Errorf("request path = %q, want %q", request.URL.Path, ingestPath)
+					writer.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			checkRedirectCalls := 0
+			injected := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+				checkRedirectCalls++
+				return nil
+			}}
+			client, err := New("access-token", WithBaseURL(server.URL), WithHTTPClient(injected), WithRetryCount(8))
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			client.config.sleep = func(context.Context, time.Duration) error {
+				t.Fatal("sleep called after redirect response")
+				return nil
+			}
+
+			_, err = client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+			var apiErr *ApiError
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != status || apiErr.Attempts != 1 {
+				t.Errorf("OrderPaid() error = %#v, want known-outcome *ApiError for status %d on attempt 1", err, status)
+			}
+			if initialRequests != 1 || redirectTargetRequests != 0 {
+				t.Errorf("requests initial=%d target=%d, want initial=1 target=0", initialRequests, redirectTargetRequests)
+			}
+			if checkRedirectCalls != 0 {
+				t.Errorf("injected CheckRedirect calls = %d, want 0", checkRedirectCalls)
+			}
+		})
 	}
 }
 
