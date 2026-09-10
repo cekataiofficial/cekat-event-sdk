@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cekat.ai/event-sdk/conformance/success-envelope.schema.json",
+  "type": "object",
+  "required": ["success", "data"],
+  "properties": {
+    "success": {"const": true},
+    "data": {
+      "type": "object",
+      "required": ["success", "message", "event_key", "validated_properties"],
+      "properties": {
+        "success": {"const": true},
+        "message": {"type": "string", "minLength": 1},
+        "event_key": {"type": "string", "minLength": 1},
+        "validated_properties": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

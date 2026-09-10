@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cekat.ai/event-sdk/conformance/conformance-case.schema.json",
+  "$defs": {
+    "language": {
+      "enum": ["go", "node", "python", "php", "java", "dotnet", "ruby"]
+    },
+    "applicability": {
+      "type": "object",
+      "required": ["requires_capabilities", "inapplicable_languages"],
+      "properties": {
+        "requires_capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"const": "caller_cancellation"}
+        },
+        "inapplicable_languages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/language"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "client": {
+      "type": "object",
+      "properties": {
+        "timeout_ms": {"type": "integer", "minimum": 1},
+        "retry_count": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "inbound": {
+      "type": "object",
+      "properties": {
+        "header_visitor_id": {"type": "string"},
+        "cookie_visitor_id": {"type": "string"},
+        "ambient_visitor_id": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "email": {"type": "string"},
+        "phone_number": {"type": "string"},
+        "contact_name": {"type": "string"},
+        "visitor_id": {"type": "string"},
+        "properties": {
+          "type": "object",
+          "additionalProperties": {"$ref": "json-value.schema.json#/$defs/value"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "required": ["name", "event"],
+      "properties": {
+        "name": {
+          "enum": ["user_registration", "user_login", "order_created", "order_paid", "custom_event"]
+        },
+        "event_key": {"type": "string"},
+        "event": {"$ref": "#/$defs/event"},
+        "properties_recipe": {
+          "enum": ["nan", "positive_infinity", "negative_infinity", "unsafe_integer_high", "unsafe_integer_low", "cycle", "non_string_key", "runtime_object"]
+        }
+      },
+      "additionalProperties": false,
+      "not": {
+        "required": ["properties_recipe"],
+        "properties": {
+          "event": {"required": ["properties"]}
+        }
+      }
+    },
+    "response_body_recipe": {
+      "type": "object",
+      "required": ["unit", "minimum_utf8_bytes", "suffix"],
+      "properties": {
+        "unit": {"type": "string"},
+        "minimum_utf8_bytes": {"type": "integer", "minimum": 65537},
+        "suffix": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "cancellation": {
+      "type": "object",
+      "required": ["phase"],
+      "properties": {
+        "phase": {"enum": ["before_request", "during_request", "during_backoff"]}
+      },
+      "additionalProperties": false
+    },
+    "acknowledgement": {
+      "type": "object",
+      "required": ["success", "message", "event_key", "validated_properties"],
+      "properties": {
+        "success": {"const": true},
+        "message": {"type": "string"},
+        "event_key": {"type": "string"},
+        "validated_properties": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "expected_request": {
+      "type": "object",
+      "required": ["path", "authorization", "payload"],
+      "properties": {
+        "path": {"const": "/api/events/ingest"},
+        "authorization": {"const": "Bearer conformance-token"},
+        "payload": {"$ref": "event-payload.schema.json"}
+      },
+      "additionalProperties": false
+    },
+    "expect": {
+      "type": "object",
+      "required": ["result", "attempts"],
+      "properties": {
+        "result": {
+          "enum": ["acknowledgement", "validation_error", "authentication_error", "event_definition_not_found_error", "api_error", "transport_error", "response_decode_error", "caller_cancelled"]
+        },
+        "attempts": {"type": "integer", "minimum": 0},
+        "delivery_outcome_unknown": {"type": "boolean"},
+        "acknowledgement": {"$ref": "#/$defs/acknowledgement"},
+        "status": {"type": "integer"},
+        "error_message": {"type": "string", "minLength": 1},
+        "server_error": {"type": "string"},
+        "server_code": {"type": "string"},
+        "retained_body_bytes": {"type": "integer", "minimum": 0, "maximum": 65536},
+        "request": {"$ref": "#/$defs/expected_request"},
+        "jitter_bounds_ms": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "array", "prefixItems": [{"const": 0}, {"const": 100}], "items": false},
+            {"type": "array", "prefixItems": [{"const": 0}, {"const": 200}], "items": false}
+          ],
+          "items": false
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "enum": ["authentication_error", "event_definition_not_found_error", "api_error"]
+              }
+            },
+            "required": ["result"]
+          },
+          "then": {"required": ["error_message"]}
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["schema_version", "id", "description", "kind", "operation", "expect"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string"},
+    "description": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["request", "validation", "success", "error", "retry", "cancellation"]},
+    "applicability": {"$ref": "#/$defs/applicability"},
+    "client": {"$ref": "#/$defs/client"},
+    "inbound": {"$ref": "#/$defs/inbound"},
+    "operation": {"$ref": "#/$defs/operation"},
+    "responses": {
+      "type": "array",
+      "items": {"$ref": "mock-response-queue.schema.json#/$defs/response"}
+    },
+    "response_body_recipe": {"$ref": "#/$defs/response_body_recipe"},
+    "cancellation": {"$ref": "#/$defs/cancellation"},
+    "expect": {"$ref": "#/$defs/expect"}
+  },
+  "additionalProperties": false
+}

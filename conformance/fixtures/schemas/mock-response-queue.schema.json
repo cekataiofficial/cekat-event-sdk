@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cekat.ai/event-sdk/conformance/mock-response-queue.schema.json",
+  "$defs": {
+    "response": {
+      "type": "object",
+      "required": ["body"],
+      "properties": {
+        "status": {"type": "integer", "minimum": 200, "maximum": 599},
+        "headers": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
+        "body": {"type": "string"},
+        "delay_ms": {"type": "integer", "minimum": 0},
+        "disconnect_before_headers": {"type": "boolean"}
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        {"required": ["status"]},
+        {"required": ["disconnect_before_headers"], "properties": {"disconnect_before_headers": {"const": true}}}
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["responses"],
+  "properties": {
+    "responses": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/response"}
+    }
+  },
+  "additionalProperties": false
+}
