@@ -29,6 +29,8 @@ func defaultConfig() config {
 		timeout:    10 * time.Second,
 		retryCount: 2,
 		httpClient: &http.Client{},
+		sleep:      defaultSleep,
+		jitter:     fullJitter,
 	}
 }
 
