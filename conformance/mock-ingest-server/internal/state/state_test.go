@@ -109,6 +109,37 @@ func TestStateCapturesAndReturnsDefensiveCopies(t *testing.T) {
 	}
 }
 
+func TestRecordRetainsValuesForDifferentlyCasedHeaderKeys(t *testing.T) {
+	s := New()
+	s.Record(RequestRecord{
+		Headers: map[string][]string{
+			"X-Trace": {"one"},
+			"x-trace": {"two"},
+		},
+	})
+
+	requests := s.Requests()
+	if len(requests) != 1 {
+		t.Fatalf("Requests() length = %d, want 1", len(requests))
+	}
+	if got := requests[0].Headers; len(got) != 1 {
+		t.Fatalf("Requests()[0].Headers = %#v, want one normalized key", got)
+	}
+	values := requests[0].Headers["x-trace"]
+	if len(values) != 2 || !contains(values, "one") || !contains(values, "two") {
+		t.Fatalf("Requests()[0].Headers[x-trace] = %#v, want both values", values)
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRecordAssignsMonotonicSequencesDuringConcurrentAccess(t *testing.T) {
 	const records = 100
 
