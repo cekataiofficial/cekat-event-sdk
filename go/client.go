@@ -46,9 +46,11 @@ func (c *Client) track(ctx context.Context, eventKey string, isCommon bool, even
 }
 
 func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledgement, error) {
-	attempt := 1
-	retriesRemaining := c.config.retryCount
-	for {
+	attempts, ok := retryAttempts(c.config.retryCount)
+	if !ok {
+		return nil, &ValidationError{Message: retryCountAttemptBoundsMessage}
+	}
+	for attempt := 1; attempt <= attempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -59,18 +61,15 @@ func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledge
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !retryable || retriesRemaining == 0 {
+		if !retryable || attempt == attempts {
 			return nil, err
 		}
 		max := retryMaximum(attempt)
 		if err := c.config.sleep(ctx, c.config.jitter(max)); err != nil {
 			return nil, ctx.Err()
 		}
-		retriesRemaining--
-		if attempt < int(^uint(0)>>1) {
-			attempt++
-		}
 	}
+	panic("unreachable")
 }
 
 func (c *Client) doAttempt(ctx context.Context, payload wirePayload, attempt int) (*Acknowledgement, error, bool) {

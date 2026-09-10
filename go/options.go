@@ -97,6 +97,9 @@ func validateConfig(cfg *config) error {
 	if cfg.retryCount < 0 {
 		return &ValidationError{Message: "retry count must not be negative"}
 	}
+	if _, ok := retryAttempts(cfg.retryCount); !ok {
+		return &ValidationError{Message: retryCountAttemptBoundsMessage}
+	}
 	if cfg.httpClient == nil {
 		return &ValidationError{Message: "HTTP client must not be nil"}
 	}

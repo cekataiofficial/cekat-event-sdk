@@ -7,9 +7,20 @@ import (
 )
 
 const (
-	initialRetryMaximum = 100 * time.Millisecond
-	maximumRetryMaximum = time.Second
+	initialRetryMaximum            = 100 * time.Millisecond
+	maximumRetryMaximum            = time.Second
+	retryCountAttemptBoundsMessage = "retry count must be no greater than maximum int minus one so total attempts are representable"
 )
+
+// retryAttempts returns the total attempts for retryCount when representable
+// in the public int attempt metadata.
+func retryAttempts(retryCount int) (int, bool) {
+	maxInt := int(^uint(0) >> 1)
+	if retryCount < 0 || retryCount == maxInt {
+		return 0, false
+	}
+	return retryCount + 1, true
+}
 
 func defaultSleep(ctx context.Context, duration time.Duration) error {
 	timer := time.NewTimer(duration)

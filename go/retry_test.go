@@ -124,18 +124,21 @@ func TestConfiguredRetryCountUsesSaturatedMaxima(t *testing.T) {
 	}
 }
 
-func TestMaxRetryCountCancellationDoesNotAttemptOrOverflow(t *testing.T) {
-	roundTripper := &scriptedRoundTripper{}
-	client := newScriptedClient(t, roundTripper, WithRetryCount(math.MaxInt))
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	_, err := client.OrderPaid(ctx, Event{Email: "ada@example.test"})
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("OrderPaid() error = %v, want context.Canceled", err)
+func TestRetryCountAttemptBounds(t *testing.T) {
+	if _, err := New("access-token", WithRetryCount(math.MaxInt)); err == nil {
+		t.Fatal("New() error = nil, want validation error for unrepresentable attempt count")
+	} else {
+		var validationErr *ValidationError
+		if !errors.As(err, &validationErr) {
+			t.Errorf("New() error = %T %v, want *ValidationError", err, err)
+		}
 	}
-	if got := roundTripper.Calls(); got != 0 {
-		t.Errorf("attempts = %d, want 0", got)
+
+	if got, ok := retryAttempts(math.MaxInt - 1); !ok || got != math.MaxInt {
+		t.Errorf("retryAttempts(math.MaxInt - 1) = (%d, %t), want (%d, true)", got, ok, math.MaxInt)
+	}
+	if _, ok := retryAttempts(math.MaxInt); ok {
+		t.Error("retryAttempts(math.MaxInt) valid = true, want false")
 	}
 }
 

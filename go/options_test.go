@@ -2,6 +2,7 @@ package cekat
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -49,6 +50,7 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 		{name: "zero timeout", token: token, option: WithTimeout(0)},
 		{name: "negative timeout", token: token, option: WithTimeout(-time.Second)},
 		{name: "negative retries", token: token, option: WithRetryCount(-1)},
+		{name: "unrepresentable retry attempts", token: token, option: WithRetryCount(math.MaxInt)},
 		{name: "nil HTTP client", token: token, option: WithHTTPClient(nil)},
 		{name: "ordinary option error", token: token, option: func(*config) error { return errors.New("invalid setting") }},
 		{name: "invalid final config", token: token, option: func(cfg *config) error {
@@ -79,7 +81,20 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 			if strings.Contains(err.Error(), token) {
 				t.Fatalf("New() error leaked access token: %q", err)
 			}
+			if tt.name == "unrepresentable retry attempts" && !strings.Contains(err.Error(), "maximum int minus one") {
+				t.Errorf("New() error = %q, want safe retry bound", err)
+			}
 		})
+	}
+}
+
+func TestNewAllowsLargestRepresentableRetryCount(t *testing.T) {
+	client, err := New("access-token", WithRetryCount(math.MaxInt-1))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if client == nil {
+		t.Fatal("New() client = nil, want client")
 	}
 }
 
