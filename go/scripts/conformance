@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+[ "$#" -eq 0 ] || { echo "conformance accepts no positional arguments" >&2; exit 2; }
+: "${CEKAT_CONFORMANCE_BASE_URL:?required}"
+: "${CEKAT_CONFORMANCE_CONTROL_URL:?required}"
+: "${CEKAT_CONFORMANCE_ACCESS_TOKEN:?required}"
+: "${CEKAT_CONFORMANCE_FIXTURES:?required}"
+case "$CEKAT_CONFORMANCE_FIXTURES" in /*) ;; *) echo "CEKAT_CONFORMANCE_FIXTURES must be absolute" >&2; exit 2;; esac
+cd "$(dirname "$0")/.."
+exec go test ./internal/conformance -run '^TestSharedConformance$' -count=1 -v
