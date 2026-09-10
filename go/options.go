@@ -110,7 +110,7 @@ func parseBaseURL(rawURL string) (string, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("base URL must use HTTP or HTTPS")
 	}
-	if parsed.Host == "" {
+	if parsed.Host == "" || parsed.Hostname() == "" {
 		return "", fmt.Errorf("base URL must include a host")
 	}
 	if parsed.User != nil {

@@ -40,6 +40,7 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 		{name: "relative URL", token: token, option: WithBaseURL("/relative")},
 		{name: "non HTTP URL", token: token, option: WithBaseURL("ftp://example.test")},
 		{name: "missing URL host", token: token, option: WithBaseURL("https:")},
+		{name: "port-only URL authority", token: token, option: WithBaseURL("https://:443")},
 		{name: "URL credentials", token: token, option: WithBaseURL("https://user:password@example.test")},
 		{name: "URL path", token: token, option: WithBaseURL("https://example.test/not-an-origin")},
 		{name: "URL query", token: token, option: WithBaseURL("https://example.test?query=value")},
