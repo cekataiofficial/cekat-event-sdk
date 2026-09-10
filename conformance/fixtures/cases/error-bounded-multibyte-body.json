@@ -19,7 +19,7 @@
     }
   ],
   "response_body_recipe": {
-    "unit": "€",
+    "unit": "\u20ac",
     "minimum_utf8_bytes": 65537,
     "suffix": "END"
   },
@@ -41,6 +41,8 @@
           "order_id": "ord-paid"
         }
       }
-    }
+    },
+    "observed_body_bytes": 65537,
+    "body_truncated": true
   }
 }

@@ -129,6 +129,8 @@
         "server_error": {"type": "string"},
         "server_code": {"type": "string"},
         "retained_body_bytes": {"type": "integer", "minimum": 0, "maximum": 65536},
+        "observed_body_bytes": {"type": "integer", "minimum": 0},
+        "body_truncated": {"type": "boolean"},
         "request": {"$ref": "#/$defs/expected_request"},
         "jitter_bounds_ms": {
           "type": "array",
@@ -174,5 +176,15 @@
     "cancellation": {"$ref": "#/$defs/cancellation"},
     "expect": {"$ref": "#/$defs/expect"}
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {"required": ["response_body_recipe"]},
+      "then": {
+        "properties": {
+          "expect": {"required": ["retained_body_bytes", "observed_body_bytes", "body_truncated"]}
+        }
+      }
+    }
+  ]
 }

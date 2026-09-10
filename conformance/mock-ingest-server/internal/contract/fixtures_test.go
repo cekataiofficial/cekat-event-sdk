@@ -39,8 +39,8 @@ func loadCases(t *testing.T) map[string]map[string]any {
 
 func TestCaseIDsAndTokens(t *testing.T) {
 	cases := loadCases(t)
-	if len(cases) != 48 {
-		t.Errorf("discovered %d conformance cases, want 48", len(cases))
+	if len(cases) != 49 {
+		t.Errorf("discovered %d conformance cases, want 49", len(cases))
 	}
 	ids := make(map[string]string, len(cases))
 
@@ -133,6 +133,7 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 		"error-404-structured",
 		"error-malformed-body",
 		"error-bounded-multibyte-body",
+		"retry-default-500-500-success",
 		"retry-500-500-success",
 		"retry-disconnect-disconnect-success",
 		"retry-timeout-timeout-success",
@@ -157,13 +158,24 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 			t.Fatalf("required behavior fixture %q is missing", id)
 		}
 	}
-	if len(cases) != 48 {
-		t.Errorf("discovered %d cases, want 48", len(cases))
+	if len(cases) != 49 {
+		t.Errorf("discovered %d cases, want 49", len(cases))
 	}
 
 	assertCanonicalResponse(t, byID["success-valid"])
-	for _, id := range requiredIDs[1:10] {
-		assertMalformedSuccess(t, id, byID[id])
+	for _, malformed := range []struct {
+		id, body string
+	}{
+		{"success-malformed-outer-false", `{"success":false,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`},
+		{"success-malformed-data-success-missing", `{"success":true,"data":{"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`},
+		{"success-malformed-data-success-false", `{"success":true,"data":{"success":false,"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`},
+		{"success-malformed-blank-message", `{"success":true,"data":{"success":true,"message":"","event_key":"order_paid","validated_properties":["order_id"]}}`},
+		{"success-malformed-blank-event-key", `{"success":true,"data":{"success":true,"message":"accepted","event_key":"","validated_properties":["order_id"]}}`},
+		{"success-malformed-validated-properties-object", `{"success":true,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":{}}}`},
+		{"success-malformed-validated-property-non-string", `{"success":true,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":[1]}}`},
+		{"success-malformed-json", `{not-json`},
+	} {
+		assertMalformedSuccess(t, malformed.id, byID[malformed.id], malformed.body)
 	}
 	for _, typed := range []struct {
 		id, result string
@@ -231,12 +243,22 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 			continue
 		}
 		client, _ := fixture["client"].(map[string]any)
-		expect, _ := fixture["expect"].(map[string]any)
-		retryCount, retryOK := client["retry_count"].(float64)
-		attempts, attemptsOK := expect["attempts"].(float64)
-		if !retryOK || !attemptsOK || attempts > retryCount+1 {
-			t.Errorf("%s retry attempts = %v with retry_count %v, want attempts <= retry_count + 1", path, expect["attempts"], client["retry_count"])
+		retryCount := float64(2)
+		if configured, configuredOK := client["retry_count"].(float64); configuredOK {
+			retryCount = configured
 		}
+		expect := fixtureExpect(fixture)
+		attempts, attemptsOK := expect["attempts"].(float64)
+		if !attemptsOK || attempts > retryCount+1 {
+			t.Errorf("%s retry attempts = %v with effective retry_count %v, want attempts <= retry_count + 1", path, expect["attempts"], retryCount)
+		}
+	}
+	defaultRetry := byID["retry-default-500-500-success"]
+	if client, declared := defaultRetry["client"].(map[string]any); declared && client["retry_count"] != nil {
+		t.Errorf("retry-default-500-500-success must leave client.retry_count absent")
+	}
+	if expect := fixtureExpect(defaultRetry); expect["attempts"] != float64(3) || !equalJSON(expect["jitter_bounds_ms"], []any{[]any{float64(0), float64(100)}, []any{float64(0), float64(200)}}) {
+		t.Errorf("retry-default-500-500-success must prove the default two retries, three attempts, and jitter bounds")
 	}
 
 	for _, id := range []string{"success-bounded-multibyte-body", "error-bounded-multibyte-body"} {
@@ -254,8 +276,8 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 		retained := []byte(body)[:65536]
 		expect, _ := fixture["expect"].(map[string]any)
 		text := strings.ToValidUTF8(string(retained), "\uFFfd")
-		if len(retained) != 65536 || retained[len(retained)-1] != 0xe2 || !strings.HasSuffix(text, "\uFFfd") || expect["retained_body_bytes"] != float64(65536) {
-			t.Errorf("%s does not prove the 65,536-byte UTF-8 split boundary", id)
+		if len(retained) != 65536 || retained[len(retained)-1] != 0xe2 || !strings.HasSuffix(text, "\uFFfd") || expect["retained_body_bytes"] != float64(65536) || expect["observed_body_bytes"] != float64(65537) || expect["body_truncated"] != true {
+			t.Errorf("%s must prove 65,537 observed bytes, 65,536 retained bytes, truncation, and the UTF-8 split boundary", id)
 		}
 	}
 }
@@ -301,7 +323,7 @@ func assertCanonicalResponse(t *testing.T, fixture map[string]any) {
 	}
 }
 
-func assertMalformedSuccess(t *testing.T, id string, fixture map[string]any) {
+func assertMalformedSuccess(t *testing.T, id string, fixture map[string]any, wantBody string) {
 	t.Helper()
 	expect := fixtureExpect(fixture)
 	responses := fixtureResponses(fixture)
@@ -310,8 +332,8 @@ func assertMalformedSuccess(t *testing.T, id string, fixture map[string]any) {
 		return
 	}
 	response, _ := responses[0].(map[string]any)
-	if response["status"] != float64(200) {
-		t.Errorf("%s response status = %v, want 200", id, response["status"])
+	if response["status"] != float64(200) || response["body"] != wantBody {
+		t.Errorf("%s must contain its named malformed 200 shape", id)
 	}
 }
 
@@ -335,43 +357,95 @@ func assertStructuredHTTPError(t *testing.T, id string, fixture map[string]any, 
 func assertMalformedHTTPError(t *testing.T, id string, fixture map[string]any, status float64, message string) {
 	t.Helper()
 	expect := fixtureExpect(fixture)
-	if expect["result"] == "response_decode_error" || expect["status"] != status || expect["error_message"] != message || expect["server_error"] != nil || expect["server_code"] != nil || expect["retained_body_bytes"] == nil {
-		t.Errorf("%s must retain malformed non-200 status classification and synthesized message", id)
+	if expect["result"] != "api_error" || expect["status"] != status || expect["error_message"] != message || expect["retained_body_bytes"] == nil {
+		t.Errorf("%s must require api_error with the declared status, synthesized message, and bounded body", id)
 	}
+	if _, declared := expect["server_error"]; declared {
+		t.Errorf("%s must not expose server_error for malformed non-200", id)
+	}
+	if _, declared := expect["server_code"]; declared {
+		t.Errorf("%s must not expose server_code for malformed non-200", id)
+	}
+	responses := fixtureResponses(fixture)
+	if len(responses) != 1 {
+		t.Errorf("%s responses = %d, want 1", id, len(responses))
+		return
+	}
+	response, _ := responses[0].(map[string]any)
+	body, bodyOK := response["body"].(string)
+	if response["status"] != status || !bodyOK || isErrorEnvelope(body) {
+		t.Errorf("%s must contain a non-envelope body at status %v", id, status)
+	}
+}
+
+func isErrorEnvelope(body string) bool {
+	var envelope struct {
+		Success any    `json:"success"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil {
+		return false
+	}
+	return envelope.Success == false && envelope.Error != ""
 }
 
 func assertRetrySemantics(t *testing.T, cases map[string]map[string]any) {
 	t.Helper()
-	for _, id := range []string{"retry-500-500-success", "retry-disconnect-disconnect-success", "retry-timeout-timeout-success", "retry-mixed-final-500", "retry-mixed-final-transport"} {
-		fixture := cases[id]
+	canonicalSuccess := `{"success":true,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`
+	structuredError := `{"success":false,"error":"defined server error","code":"fixture_code"}`
+	disconnect := map[string]any{"body": "", "disconnect_before_headers": true}
+	response := func(status float64, body string) map[string]any {
+		return map[string]any{"status": status, "body": body}
+	}
+	for _, expected := range []struct {
+		id        string
+		responses []any
+	}{
+		{"retry-default-500-500-success", []any{response(500, structuredError), response(500, structuredError), response(200, canonicalSuccess)}},
+		{"retry-500-500-success", []any{response(500, structuredError), response(500, structuredError), response(200, canonicalSuccess)}},
+		{"retry-disconnect-disconnect-success", []any{disconnect, disconnect, response(200, canonicalSuccess)}},
+		{"retry-timeout-timeout-success", []any{map[string]any{"status": float64(200), "body": canonicalSuccess, "delay_ms": float64(50)}, map[string]any{"status": float64(200), "body": canonicalSuccess, "delay_ms": float64(50)}, response(200, canonicalSuccess)}},
+		{"retry-mixed-final-500", []any{disconnect, response(500, structuredError), response(500, structuredError)}},
+		{"retry-mixed-final-transport", []any{response(500, structuredError), disconnect, disconnect}},
+	} {
+		fixture := cases[expected.id]
 		expect := fixtureExpect(fixture)
 		jitter, _ := expect["jitter_bounds_ms"].([]any)
 		if expect["attempts"] != float64(3) || len(jitter) != 2 || !equalJSON(jitter, []any{[]any{float64(0), float64(100)}, []any{float64(0), float64(200)}}) {
-			t.Errorf("%s must use three attempts and exact jitter bounds [[0,100],[0,200]]", id)
+			t.Errorf("%s must use three attempts and exact jitter bounds [[0,100],[0,200]]", expected.id)
+		}
+		if !equalJSON(fixtureResponses(fixture), expected.responses) {
+			t.Errorf("%s must specify the complete ordered FIFO retry response sequence", expected.id)
 		}
 	}
 	if fixtureExpect(cases["retry-mixed-final-500"])["result"] != "api_error" || fixtureExpect(cases["retry-mixed-final-transport"])["result"] != "transport_error" || fixtureExpect(cases["retry-mixed-final-transport"])["delivery_outcome_unknown"] != true {
 		t.Errorf("mixed retry cases must expose their final failure type and certainty")
 	}
-	responses := fixtureResponses(cases["retry-disconnect-disconnect-success"])
-	for i := 0; i < 2 && i < len(responses); i++ {
-		response, _ := responses[i].(map[string]any)
-		if response["disconnect_before_headers"] != true {
-			t.Errorf("retry-disconnect-disconnect-success response %d must disconnect before headers", i)
-		}
-	}
 	timeoutFixture := cases["retry-timeout-timeout-success"]
 	client, _ := timeoutFixture["client"].(map[string]any)
-	timeout := client["timeout_ms"]
+	timeout, timeoutOK := client["timeout_ms"].(float64)
+	if !timeoutOK || timeout != 25 {
+		t.Errorf("retry-timeout-timeout-success timeout_ms = %v, want 25", client["timeout_ms"])
+	}
 	for i, item := range fixtureResponses(timeoutFixture)[:2] {
 		response, _ := item.(map[string]any)
-		if response["delay_ms"] == nil || response["delay_ms"].(float64) <= timeout.(float64) {
+		if response["delay_ms"] == nil || response["delay_ms"].(float64) <= timeout {
 			t.Errorf("retry-timeout-timeout-success response %d delay must exceed timeout_ms", i)
 		}
 	}
-	for _, id := range []string{"retry-no-400", "retry-no-401", "retry-no-404", "retry-no-429"} {
-		if fixtureExpect(cases[id])["attempts"] != float64(1) {
-			t.Errorf("%s must not retry a permanent status", id)
+	for _, permanent := range []struct {
+		id     string
+		status float64
+		body   string
+	}{
+		{"retry-no-400", 400, structuredError},
+		{"retry-no-401", 401, structuredError},
+		{"retry-no-404", 404, structuredError},
+		{"retry-no-429", 429, "not an error envelope"},
+	} {
+		fixture := cases[permanent.id]
+		if fixtureExpect(fixture)["attempts"] != float64(1) || !equalJSON(fixtureResponses(fixture), []any{response(permanent.status, permanent.body)}) {
+			t.Errorf("%s must specify its permanent status as one non-retry FIFO response", permanent.id)
 		}
 	}
 }
