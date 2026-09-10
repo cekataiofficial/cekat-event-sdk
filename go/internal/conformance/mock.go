@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 )
 
 type controlClient struct {
@@ -24,15 +23,17 @@ type journalEntry struct {
 	Body     string              `json:"body"`
 }
 
-func newControlClient(origin string) *controlClient {
-	return &controlClient{origin: strings.TrimSuffix(origin, "/"), http: &http.Client{}}
+func newControlClient(origin string) (*controlClient, error) {
+	validated, err := absoluteHTTPOrigin(origin)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CEKAT_CONFORMANCE_CONTROL_URL: %w", err)
+	}
+	return &controlClient{origin: validated, http: &http.Client{}}, nil
 }
 func (c *controlClient) reset() error { return c.post("/__control/reset", nil) }
 func (c *controlClient) queue(responses []mockResponse, recipe *bodyRecipe) error {
-	if len(responses) == 0 && recipe == nil {
-		return nil
-	}
-	queued := append([]mockResponse(nil), responses...)
+	queued := make([]mockResponse, len(responses))
+	copy(queued, responses)
 	if recipe != nil {
 		if len(queued) != 1 {
 			return fmt.Errorf("response-body recipe requires exactly one response")

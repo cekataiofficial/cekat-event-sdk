@@ -65,7 +65,9 @@ func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledge
 			return nil, err
 		}
 		max := retryMaximum(attempt)
-		if err := c.config.sleep(ctx, c.config.jitter(max)); err != nil {
+		delay := c.config.jitter(max)
+		observeRetryDelay(ctx, delay)
+		if err := c.config.sleep(ctx, delay); err != nil {
 			return nil, ctx.Err()
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,14 +17,24 @@ import (
 )
 
 func TestSharedConformance(t *testing.T) {
+	if conformanceEnvironmentAbsent() {
+		t.Skip("shared conformance environment is not configured")
+	}
+	requireConformanceEnvironment(t)
 	baseURL := requiredEnvironment(t, "CEKAT_CONFORMANCE_BASE_URL")
 	controlURL := requiredEnvironment(t, "CEKAT_CONFORMANCE_CONTROL_URL")
+	if _, err := absoluteHTTPOrigin(baseURL); err != nil {
+		t.Fatalf("invalid CEKAT_CONFORMANCE_BASE_URL: %v", err)
+	}
 	token := requiredEnvironment(t, "CEKAT_CONFORMANCE_ACCESS_TOKEN")
 	fixtures, err := loadFixtures(requiredEnvironment(t, "CEKAT_CONFORMANCE_FIXTURES"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	control := newControlClient(controlURL)
+	control, err := newControlClient(controlURL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	executed := make(map[string]struct{}, len(fixtures))
 	for _, f := range fixtures {
 		f := f
@@ -49,6 +60,15 @@ func TestSharedConformance(t *testing.T) {
 	}
 }
 
+func conformanceEnvironmentAbsent() bool {
+	for _, name := range []string{"CEKAT_CONFORMANCE_BASE_URL", "CEKAT_CONFORMANCE_CONTROL_URL", "CEKAT_CONFORMANCE_ACCESS_TOKEN", "CEKAT_CONFORMANCE_FIXTURES"} {
+		if os.Getenv(name) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 func requiredEnvironment(t *testing.T, name string) string {
 	t.Helper()
 	value := os.Getenv(name)
@@ -56,6 +76,22 @@ func requiredEnvironment(t *testing.T, name string) string {
 		t.Fatalf("%s is required", name)
 	}
 	return value
+}
+
+func requireConformanceEnvironment(t *testing.T) {
+	t.Helper()
+	allowed := map[string]struct{}{
+		"CEKAT_CONFORMANCE_BASE_URL": {}, "CEKAT_CONFORMANCE_CONTROL_URL": {},
+		"CEKAT_CONFORMANCE_ACCESS_TOKEN": {}, "CEKAT_CONFORMANCE_FIXTURES": {},
+	}
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, "CEKAT_CONFORMANCE_") {
+			if _, ok := allowed[name]; !ok {
+				t.Fatalf("unrecognized conformance environment variable %s", name)
+			}
+		}
+	}
 }
 
 func runFixture(t *testing.T, f fixture, baseURL, token string, control *controlClient) {
@@ -115,11 +151,25 @@ func runFixture(t *testing.T, f fixture, baseURL, token string, control *control
 	if f.Operation.PropertiesRecipe != nil {
 		event.Properties = recipeProperties(*f.Operation.PropertiesRecipe)
 	}
+	var delays []time.Duration
+	if len(f.Expect.JitterBounds) > 0 {
+		var delaysMu sync.Mutex
+		ctx = cekat.WithRetryDelayObserver(ctx, func(delay time.Duration) {
+			delaysMu.Lock()
+			delays = append(delays, delay)
+			delaysMu.Unlock()
+		})
+	}
+	var stopPolling func()
 	if f.Cancellation != nil && f.Cancellation.Phase == "during_request" {
-		go cancelWhenJournaled(control, cancel)
+		stopPolling = cancelWhenJournaled(control, cancel)
 	}
 	ack, gotErr := dispatch(client, ctx, f.Operation, event)
+	if stopPolling != nil {
+		stopPolling()
+	}
 	assertResult(t, f, ack, gotErr)
+	assertJitterBounds(t, f, delays)
 	requests, err := control.requests()
 	if err != nil {
 		t.Fatal(err)
@@ -139,17 +189,31 @@ func (r cancelOnFirst500) RoundTrip(request *http.Request) (*http.Response, erro
 	}
 	return response, err
 }
-func cancelWhenJournaled(control *controlClient, cancel context.CancelFunc) {
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		requests, err := control.requests()
-		if err == nil && len(requests) > 0 {
-			cancel()
-			return
+func cancelWhenJournaled(control *controlClient, cancel context.CancelFunc) func() {
+	done := make(chan struct{})
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		deadline := time.NewTimer(time.Second)
+		defer deadline.Stop()
+		for {
+			requests, err := control.requests()
+			if err == nil && len(requests) > 0 {
+				cancel()
+				return
+			}
+			select {
+			case <-done:
+				return
+			case <-deadline.C:
+				cancel()
+				return
+			case <-time.After(time.Millisecond):
+			}
 		}
-		time.Sleep(time.Millisecond)
-	}
-	cancel()
+	}()
+	return func() { close(done); wait.Wait() }
 }
 
 func dispatch(client *cekat.Client, ctx context.Context, operation operation, event cekat.Event) (*cekat.Acknowledgement, error) {
@@ -277,12 +341,52 @@ func assertDelivery(t *testing.T, f fixture, actual bool) {
 		t.Fatalf("delivery outcome unknown = %t, want %t", actual, *f.Expect.DeliveryUnknown)
 	}
 }
+func assertJitterBounds(t *testing.T, f fixture, delays []time.Duration) {
+	t.Helper()
+	if len(delays) != len(f.Expect.JitterBounds) {
+		t.Fatalf("observed %d retry jitter delays, want %d", len(delays), len(f.Expect.JitterBounds))
+	}
+	for index, bounds := range f.Expect.JitterBounds {
+		if len(bounds) != 2 {
+			t.Fatalf("fixture jitter bounds[%d] invalid", index)
+		}
+		min, max := time.Duration(bounds[0])*time.Millisecond, time.Duration(bounds[1])*time.Millisecond
+		if delays[index] < min || delays[index] > max {
+			t.Fatalf("retry jitter delay[%d] = %s, want [%s, %s]", index, delays[index], min, max)
+		}
+	}
+}
 func assertBody(t *testing.T, f fixture, body []byte) {
 	t.Helper()
 	if f.Expect.RetainedBodyBytes != nil && len(body) != *f.Expect.RetainedBodyBytes {
 		t.Fatalf("retained body bytes = %d, want %d", len(body), *f.Expect.RetainedBodyBytes)
 	}
-	if f.BodyRecipe != nil && f.Expect.BodyTruncated != nil && *f.Expect.BodyTruncated && !strings.Contains(strings.ToValidUTF8(string(body), "\uFFFD"), "\uFFFD") {
+	if f.BodyRecipe == nil {
+		return
+	}
+	expanded := []byte(expandBodyRecipe(f.BodyRecipe))
+	if f.Expect.ObservedBodyBytes == nil || f.Expect.BodyTruncated == nil || f.Expect.RetainedBodyBytes == nil {
+		t.Fatal("schema-valid response body recipe missing body expectations")
+	}
+	observed := len(expanded)
+	if observed > 65537 {
+		observed = 65537
+	}
+	if observed != *f.Expect.ObservedBodyBytes {
+		t.Fatalf("recipe observed body bytes = %d, want %d", observed, *f.Expect.ObservedBodyBytes)
+	}
+	truncated := len(expanded) > 65536
+	if truncated != *f.Expect.BodyTruncated {
+		t.Fatalf("recipe body truncated = %t, want %t", truncated, *f.Expect.BodyTruncated)
+	}
+	retained := expanded
+	if len(retained) > 65536 {
+		retained = retained[:65536]
+	}
+	if !reflect.DeepEqual(body, retained) {
+		t.Fatalf("retained body is not the declared response recipe prefix")
+	}
+	if truncated && !strings.Contains(strings.ToValidUTF8(string(body), "\uFFFD"), "\uFFFD") {
 		t.Fatalf("truncated text body does not include replacement character")
 	}
 }

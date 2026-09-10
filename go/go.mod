@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/labstack/echo/v4 v4.15.4
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect

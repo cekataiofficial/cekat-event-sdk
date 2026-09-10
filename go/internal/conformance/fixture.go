@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 type fixture struct {
@@ -53,11 +56,11 @@ type eventRecipe struct {
 	Properties  map[string]any `json:"properties"`
 }
 type mockResponse struct {
-	Status     *int              `json:"status"`
-	Headers    map[string]string `json:"headers"`
+	Status     *int              `json:"status,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
 	Body       string            `json:"body"`
-	DelayMS    *int              `json:"delay_ms"`
-	Disconnect *bool             `json:"disconnect_before_headers"`
+	DelayMS    *int              `json:"delay_ms,omitempty"`
+	Disconnect *bool             `json:"disconnect_before_headers,omitempty"`
 }
 type bodyRecipe struct {
 	Unit         string `json:"unit"`
@@ -105,6 +108,10 @@ func loadFixtures(directory string) ([]fixture, error) {
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("fixture corpus is empty")
 	}
+	schema, err := loadCaseSchema(filepath.Join(filepath.Dir(directory), "schemas"))
+	if err != nil {
+		return nil, fmt.Errorf("load shared case schema: %w", err)
+	}
 	fixtures := make([]fixture, 0, len(entries))
 	ids := map[string]struct{}{}
 	for _, entry := range entries {
@@ -118,8 +125,8 @@ func loadFixtures(directory string) ([]fixture, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := validateFixtureShape(data); err != nil {
-			return nil, fmt.Errorf("fixture %q: %w", entry.Name(), err)
+		if err := validateCaseJSON(schema, data); err != nil {
+			return nil, fmt.Errorf("fixture %q does not satisfy the shared schema: %w", entry.Name(), err)
 		}
 		var value fixture
 		decoder := json.NewDecoder(bytes.NewReader(data))
@@ -130,8 +137,8 @@ func loadFixtures(directory string) ([]fixture, error) {
 		if err := decoder.Decode(&struct{}{}); err != io.EOF {
 			return nil, fmt.Errorf("fixture %q: trailing JSON value", entry.Name())
 		}
-		if err := validateFixture(value, strings.TrimSuffix(entry.Name(), ".json")); err != nil {
-			return nil, fmt.Errorf("fixture %q: %w", value.ID, err)
+		if value.ID != strings.TrimSuffix(entry.Name(), ".json") {
+			return nil, fmt.Errorf("fixture %q: filename/ID mismatch: %q", entry.Name(), value.ID)
 		}
 		if _, found := ids[value.ID]; found {
 			return nil, fmt.Errorf("duplicate fixture ID %q", value.ID)
@@ -143,6 +150,46 @@ func loadFixtures(directory string) ([]fixture, error) {
 		return nil, fmt.Errorf("fixture corpus contains no direct JSON files")
 	}
 	return fixtures, nil
+}
+
+// loadCaseSchema compiles the complete shared JSON Schema and every referenced
+// schema. Fixtures are validated before decoding so Go's permissive handling of
+// JSON null values cannot make an invalid fixture executable.
+func loadCaseSchema(schemaDirectory string) (*jsonschema.Schema, error) {
+	compiler := jsonschema.NewCompiler()
+	resources := map[string]string{
+		"https://schemas.cekat.ai/event-sdk/conformance/conformance-case.schema.json":    "conformance-case.schema.json",
+		"https://schemas.cekat.ai/event-sdk/conformance/mock-response-queue.schema.json": "mock-response-queue.schema.json",
+		"https://schemas.cekat.ai/event-sdk/conformance/event-payload.schema.json":       "event-payload.schema.json",
+		"https://schemas.cekat.ai/event-sdk/conformance/json-value.schema.json":          "json-value.schema.json",
+	}
+	for url, name := range resources {
+		data, err := os.ReadFile(filepath.Join(schemaDirectory, name))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		var document any
+		if err := json.Unmarshal(data, &document); err != nil {
+			return nil, fmt.Errorf("decode %s: %w", name, err)
+		}
+		if err := compiler.AddResource(url, document); err != nil {
+			return nil, fmt.Errorf("add %s: %w", name, err)
+		}
+	}
+	return compiler.Compile("https://schemas.cekat.ai/event-sdk/conformance/conformance-case.schema.json")
+}
+
+func validateCaseJSON(schema *jsonschema.Schema, data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("trailing JSON value")
+	}
+	return schema.Validate(value)
 }
 
 func validateFixtureShape(data []byte) error {
@@ -298,6 +345,14 @@ func validateMockResponse(r mockResponse) error {
 	}
 	return nil
 }
+func absoluteHTTPOrigin(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.Hostname() == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return "", fmt.Errorf("must be an absolute pathless HTTP(S) origin")
+	}
+	return strings.TrimSuffix(parsed.String(), "/"), nil
+}
+
 func oneOf(value string, allowed ...string) bool {
 	for _, candidate := range allowed {
 		if value == candidate {
