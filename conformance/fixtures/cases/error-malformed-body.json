@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "id": "error-malformed-body",
+  "description": "A malformed non-200 body retains status classification and its reason phrase.",
+  "kind": "error",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 418,
+      "body": "not an error envelope"
+    }
+  ],
+  "expect": {
+    "result": "api_error",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "status": 418,
+    "error_message": "I'm a teapot",
+    "retained_body_bytes": 21,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}

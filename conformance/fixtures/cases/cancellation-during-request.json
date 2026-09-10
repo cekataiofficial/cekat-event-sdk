@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "cancellation-during-request",
+  "description": "Cancellation interrupts a journaled delayed request without retrying.",
+  "kind": "cancellation",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"success\":true,\"message\":\"accepted\",\"event_key\":\"order_paid\",\"validated_properties\":[\"order_id\"]}}",
+      "delay_ms": 100
+    }
+  ],
+  "applicability": {
+    "requires_capabilities": [
+      "caller_cancellation"
+    ],
+    "inapplicable_languages": [
+      "php",
+      "ruby"
+    ]
+  },
+  "cancellation": {
+    "phase": "during_request"
+  },
+  "client": {
+    "retry_count": 2
+  },
+  "expect": {
+    "result": "caller_cancelled",
+    "attempts": 1,
+    "delivery_outcome_unknown": true,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}

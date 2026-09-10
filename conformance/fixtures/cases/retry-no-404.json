@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "retry-no-404",
+  "description": "HTTP 404 is permanent and is not retried.",
+  "kind": "retry",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 404,
+      "body": "{\"success\":false,\"error\":\"defined server error\",\"code\":\"fixture_code\"}"
+    }
+  ],
+  "client": {
+    "retry_count": 2
+  },
+  "expect": {
+    "result": "event_definition_not_found_error",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "status": 404,
+    "error_message": "defined server error",
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    },
+    "server_error": "defined server error",
+    "server_code": "fixture_code"
+  }
+}

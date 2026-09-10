@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "cancellation-during-backoff",
+  "description": "Cancellation interrupts backoff after one completed retryable 500.",
+  "kind": "cancellation",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 500,
+      "body": "{\"success\":false,\"error\":\"defined server error\",\"code\":\"fixture_code\"}"
+    }
+  ],
+  "applicability": {
+    "requires_capabilities": [
+      "caller_cancellation"
+    ],
+    "inapplicable_languages": [
+      "php",
+      "ruby"
+    ]
+  },
+  "cancellation": {
+    "phase": "during_backoff"
+  },
+  "client": {
+    "retry_count": 2
+  },
+  "expect": {
+    "result": "caller_cancelled",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}

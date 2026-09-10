@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "id": "retry-mixed-final-500",
+  "description": "Mixed transport and 500 failures surface the final 500 as an API error.",
+  "kind": "retry",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "body": "",
+      "disconnect_before_headers": true
+    },
+    {
+      "status": 500,
+      "body": "{\"success\":false,\"error\":\"defined server error\",\"code\":\"fixture_code\"}"
+    },
+    {
+      "status": 500,
+      "body": "{\"success\":false,\"error\":\"defined server error\",\"code\":\"fixture_code\"}"
+    }
+  ],
+  "client": {
+    "retry_count": 2
+  },
+  "expect": {
+    "result": "api_error",
+    "attempts": 3,
+    "delivery_outcome_unknown": false,
+    "status": 500,
+    "error_message": "defined server error",
+    "server_error": "defined server error",
+    "server_code": "fixture_code",
+    "jitter_bounds_ms": [
+      [
+        0,
+        100
+      ],
+      [
+        0,
+        200
+      ]
+    ],
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}
