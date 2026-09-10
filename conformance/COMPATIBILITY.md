@@ -51,6 +51,42 @@ $ go list -m -versions github.com/santhosh-tekuri/jsonschema/v6
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.0-alpha.1 v6.0.0-beta1 v6.0.0 v6.0.1 v6.0.2 v6.0.3
 
 $ go list -m -u -json all
+{
+    "Path": "github.com/dlclark/regexp2",
+    "Version": "v1.11.0",
+    "Update": {"Path": "github.com/dlclark/regexp2", "Version": "v1.12.0"},
+    "Indirect": true
+}
+{
+    "Path": "github.com/santhosh-tekuri/jsonschema/v6",
+    "Version": "v6.0.3"
+}
+{
+    "Path": "golang.org/x/mod",
+    "Version": "v0.8.0",
+    "Update": {"Path": "golang.org/x/mod", "Version": "v0.41.0"},
+    "Indirect": true
+}
+{
+    "Path": "golang.org/x/sys",
+    "Version": "v0.5.0",
+    "Update": {"Path": "golang.org/x/sys", "Version": "v0.48.0"},
+    "Indirect": true
+}
+{
+    "Path": "golang.org/x/text",
+    "Version": "v0.14.0",
+    "Update": {"Path": "golang.org/x/text", "Version": "v0.42.0"},
+    "Indirect": true
+}
+{
+    "Path": "golang.org/x/tools",
+    "Version": "v0.6.0",
+    "Update": {"Path": "golang.org/x/tools", "Version": "v0.50.0"},
+    "Indirect": true
+}
 ```
 
-The selected Go 1.26.5 line remains supported under the two-newer-major-release policy: Go 1.27.1 is the only newer major line reported by the official release source. The direct test dependency remains pinned at the latest listed `github.com/santhosh-tekuri/jsonschema/v6` release, v6.0.3; `go list -m -u -json all` reported no update for that direct dependency. It did report available updates for indirect transitive modules (`github.com/dlclark/regexp2`, `golang.org/x/mod`, `golang.org/x/sys`, `golang.org/x/text`, and `golang.org/x/tools`); this verification does not silently adopt them. No security finding was reported by the prescribed version checks. The selected runtime and direct test dependency therefore continue to match this document's supported matrix; the complete race suite, vet, module-stability check, and process-contract smoke test were rerun before release evidence was recorded.
+This is an intentionally abbreviated, field-filtered transcript of the dependency records emitted by the command: it retains every direct dependency and every record with an `Update` field, while omitting the main-module record and unrelated metadata (timestamps, cache paths, checksums, and Go-version fields). Reproduce it by running the displayed command from `conformance/mock-ingest-server`; an absent `Update` field for direct dependency `github.com/santhosh-tekuri/jsonschema/v6` records current `v6.0.3` with no available update. The indirect update pairs are `github.com/dlclark/regexp2` `v1.11.0` → `v1.12.0`, `golang.org/x/mod` `v0.8.0` → `v0.41.0`, `golang.org/x/sys` `v0.5.0` → `v0.48.0`, `golang.org/x/text` `v0.14.0` → `v0.42.0`, and `golang.org/x/tools` `v0.6.0` → `v0.50.0`; this verification does not silently adopt them.
+
+The selected Go 1.26.5 line remains supported under the two-newer-major-release policy: Go 1.27.1 is the only newer major line reported by the official release source. The direct test dependency remains pinned at the latest listed `github.com/santhosh-tekuri/jsonschema/v6` release, v6.0.3. The prescribed release/version queries are not vulnerability or advisory scans and do not establish the absence of relevant security advisories; no separate advisory review is recorded in this evidence. The selected runtime and direct test dependency therefore continue to match this document's supported matrix based on version compatibility; the complete race suite, vet, module-stability check, and process-contract smoke test were rerun before release evidence was recorded.
