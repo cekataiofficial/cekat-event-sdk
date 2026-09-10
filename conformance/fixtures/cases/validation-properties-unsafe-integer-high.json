@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "validation-properties-unsafe-integer-high",
+  "description": "The unsafe_integer_high runtime properties recipe fails locally before any request.",
+  "kind": "validation",
+  "operation": {
+    "name": "custom_event",
+    "event_key": "runtime-properties",
+    "event": {
+      "email": "person@example.com"
+    },
+    "properties_recipe": "unsafe_integer_high"
+  },
+  "expect": {
+    "result": "validation_error",
+    "attempts": 0
+  }
+}

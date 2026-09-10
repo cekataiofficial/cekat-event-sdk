@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "request-common-order-paid",
+  "description": "The order paid wrapper sends its fixed common event key.",
+  "kind": "request",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid",
+        "amount": 125.75
+      }
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid",
+          "amount": 125.75
+        }
+      }
+    }
+  }
+}

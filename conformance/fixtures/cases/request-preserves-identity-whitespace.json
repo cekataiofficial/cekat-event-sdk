@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "request-preserves-identity-whitespace",
+  "description": "Identity whitespace is used only for validation and is preserved on the wire.",
+  "kind": "request",
+  "operation": {
+    "name": "user_login",
+    "event": {
+      "email": "  ada@example.com  ",
+      "phone_number": "  +628123456789  "
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "user_login",
+        "is_common": true,
+        "email": "  ada@example.com  ",
+        "phone_number": "  +628123456789  "
+      }
+    }
+  }
+}

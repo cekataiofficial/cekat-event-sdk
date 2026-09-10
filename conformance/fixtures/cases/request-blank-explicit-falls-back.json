@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "request-blank-explicit-falls-back",
+  "description": "A blank explicit event visitor falls back to nonblank ambient visitor state.",
+  "kind": "request",
+  "inbound": {
+    "ambient_visitor_id": " ambient-visitor "
+  },
+  "operation": {
+    "name": "user_login",
+    "event": {
+      "email": "fallback@example.com",
+      "visitor_id": "  \t"
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "user_login",
+        "is_common": true,
+        "email": "fallback@example.com",
+        "visitor_id": "ambient-visitor"
+      }
+    }
+  }
+}

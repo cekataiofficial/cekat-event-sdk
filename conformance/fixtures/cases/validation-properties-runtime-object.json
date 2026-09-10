@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "validation-properties-runtime-object",
+  "description": "The runtime_object runtime properties recipe fails locally before any request.",
+  "kind": "validation",
+  "operation": {
+    "name": "custom_event",
+    "event_key": "runtime-properties",
+    "event": {
+      "email": "person@example.com"
+    },
+    "properties_recipe": "runtime_object"
+  },
+  "expect": {
+    "result": "validation_error",
+    "attempts": 0
+  }
+}

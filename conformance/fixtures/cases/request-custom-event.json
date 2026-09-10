@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "request-custom-event",
+  "description": "The custom event operation sends the supplied key and marks the payload non-common.",
+  "kind": "request",
+  "operation": {
+    "name": "custom_event",
+    "event_key": "trial_started",
+    "event": {
+      "email": "person@example.com",
+      "properties": {
+        "source": "landing-page"
+      }
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "trial_started",
+        "is_common": false,
+        "email": "person@example.com",
+        "properties": {
+          "source": "landing-page"
+        }
+      }
+    }
+  }
+}

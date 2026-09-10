@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "request-common-user-login",
+  "description": "The user login wrapper sends its fixed common event key.",
+  "kind": "request",
+  "operation": {
+    "name": "user_login",
+    "event": {
+      "phone_number": "+628123456789"
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "user_login",
+        "is_common": true,
+        "phone_number": "+628123456789"
+      }
+    }
+  }
+}

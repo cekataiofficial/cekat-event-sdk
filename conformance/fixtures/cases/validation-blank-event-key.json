@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "validation-blank-event-key",
+  "description": "A blank custom event key fails locally before any request.",
+  "kind": "validation",
+  "operation": {
+    "name": "custom_event",
+    "event_key": "   ",
+    "event": {
+      "email": "person@example.com"
+    }
+  },
+  "expect": {
+    "result": "validation_error",
+    "attempts": 0
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "validation-properties-non-string-key",
+  "description": "The non_string_key runtime properties recipe fails locally before any request.",
+  "kind": "validation",
+  "operation": {
+    "name": "custom_event",
+    "event_key": "runtime-properties",
+    "event": {
+      "email": "person@example.com"
+    },
+    "properties_recipe": "non_string_key"
+  },
+  "expect": {
+    "result": "validation_error",
+    "attempts": 0
+  }
+}
