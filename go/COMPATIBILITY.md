@@ -112,7 +112,7 @@ repository HTTP status in {'200', '404'}
 
 ## Release-time verification (2026-09-10 UTC) — BLOCKED
 
-The following release evidence was collected immediately before approval. The selected module metadata was intentionally left unchanged: `go mod tidy` was inspected and reverted because it would introduce historical, non-Task-12 dependency classification and checksum churn. `go list -m -u -json all` completed successfully; the selected framework versions have no reported update in that output (Gin v1.12.0, Echo v4.15.4, Fiber v3.5.0, and Chi v5.3.2). It did report `github.com/quic-go/quic-go` v0.59.0 has an available v0.62.0 update.
+The following release evidence was collected immediately before approval. `go mod tidy` was applied and re-run cleanly. It correctly classifies Chi v5 and Fiber v3 (used by adapter packages) plus `fasthttp` (used by the Fiber adapter test) as direct module requirements, and records checksums required by the resolved dependency test graph. The tidy result made no dependency version upgrades. `go list -m -u -json all` completed successfully; the selected framework versions have no reported update in that output (Gin v1.12.0, Echo v4.15.4, Fiber v3.5.0, and Chi v5.3.2). It did report `github.com/quic-go/quic-go` v0.59.0 has an available v0.62.0 update.
 
 ```text
 $ curl -fsSL 'https://go.dev/dl/?mode=json' > /tmp/cekat-go-releases-release.json

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -105,8 +106,47 @@ func TestPrepareWritesDeterministicManifestAndTokenFreeArchive(t *testing.T) {
 	}
 }
 
+func TestPackageScriptRejectsInvalidArgumentsAndUnsafeOutputs(t *testing.T) {
+	output := t.TempDir()
+	nonempty := t.TempDir()
+	if err := os.WriteFile(filepath.Join(nonempty, "existing"), []byte("not empty"), 0o644); err != nil {
+		t.Fatalf("write nonempty output marker: %v", err)
+	}
+	symlinkTarget := t.TempDir()
+	symlink := filepath.Join(t.TempDir(), "output-link")
+	if err := os.Symlink(symlinkTarget, symlink); err != nil {
+		t.Fatalf("make output symlink: %v", err)
+	}
+
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{name: "no arguments", args: nil},
+		{name: "missing output value", args: []string{"--version", packageVersion, "--output"}},
+		{name: "reordered arguments", args: []string{"--output", output, "--version", packageVersion}},
+		{name: "wrong version", args: []string{"--version", "1.0.0", "--output", output}},
+		{name: "extra argument", args: []string{"--version", packageVersion, "--output", output, "extra"}},
+		{name: "relative output", args: []string{"--version", packageVersion, "--output", "relative/output"}},
+		{name: "traversal output", args: []string{"--version", packageVersion, "--output", filepath.Join(output, "..", "other")}},
+		{name: "nonempty output", args: []string{"--version", packageVersion, "--output", nonempty}},
+		{name: "symlink output", args: []string{"--version", packageVersion, "--output", symlink}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(packageScript(t), test.args...)
+			output, err := command.CombinedOutput()
+			if err == nil {
+				t.Fatalf("package script succeeded with %q", test.args)
+			}
+			if exitError, ok := err.(*exec.ExitError); !ok || exitError.ExitCode() != 2 {
+				t.Fatalf("package script error = %v, output = %s; want exit 2", err, output)
+			}
+		})
+	}
+}
+
 func TestPackageScriptIsNoPublishWrapper(t *testing.T) {
-	script, err := os.ReadFile(filepath.Join(goModuleRoot(t), "scripts", "package"))
+	script, err := os.ReadFile(packageScript(t))
 	if err != nil {
 		t.Fatalf("read package script: %v", err)
 	}
@@ -123,6 +163,48 @@ func TestPackageScriptIsNoPublishWrapper(t *testing.T) {
 	}
 }
 
+func TestPrepareExcludesCredentialFiles(t *testing.T) {
+	moduleRoot := testModule(t)
+	output := t.TempDir()
+	if err := prepare(packageVersion, output, moduleRoot); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	_, archiveBytes := readManifestAndArchive(t, output)
+	archive, err := zip.NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)))
+	if err != nil {
+		t.Fatalf("open archive: %v", err)
+	}
+	entries := make(map[string]bool, len(archive.File))
+	for _, file := range archive.File {
+		entries[strings.TrimPrefix(file.Name, modulePath+"@v"+packageVersion+"/")] = true
+	}
+	for _, credentialPath := range []string{
+		".netrc",
+		".npmrc",
+		".pypirc",
+		"id_rsa",
+		"private.pem",
+		"private.key",
+		"service-account.json",
+		"auth.json",
+	} {
+		if entries[credentialPath] {
+			t.Errorf("archive includes credential path %q", credentialPath)
+		}
+	}
+}
+
+func TestTrackedSourceFilesRejectSymlink(t *testing.T) {
+	moduleRoot := testModule(t)
+	if err := os.Symlink("client.go", filepath.Join(moduleRoot, "source-link.go")); err != nil {
+		t.Fatalf("make source symlink: %v", err)
+	}
+	git(t, moduleRoot, "add", "source-link.go")
+	if _, err := trackedSourceFiles(moduleRoot); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("trackedSourceFiles error = %v, want tracked symlink rejection", err)
+	}
+}
+
 func TestREADMEContract(t *testing.T) {
 	readme, err := os.ReadFile(filepath.Join(goModuleRoot(t), "README.md"))
 	if err != nil {
@@ -131,6 +213,7 @@ func TestREADMEContract(t *testing.T) {
 	contents := string(readme)
 	for _, required := range []string{
 		"github.com/cekataiofficial/cekat-event-sdk-go",
+		"Gin v1, Echo v4, Fiber v3, and Chi v5",
 		"cekat.New(",
 		"context.WithTimeout",
 		"WithVisitorID",
@@ -181,17 +264,30 @@ func goModuleRoot(t *testing.T) string {
 	return root
 }
 
+func packageScript(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(goModuleRoot(t), "scripts", "package")
+}
+
 func testModule(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	for path, contents := range map[string]string{
-		"go.mod":              "module example.test/package\n\ngo 1.26\n",
-		"client.go":           "package packageexample\n",
-		"nested/source.go":    "package nested\n",
-		"generated/output.go": "package generated\n",
-		".env":                "CEKAT_ACCESS_TOKEN=test-secret-token\n",
-		"credentials.txt":     "test-secret-token\n",
-		"README.md":           "# test package\n",
+		"go.mod":               "module example.test/package\n\ngo 1.26\n",
+		"client.go":            "package packageexample\n",
+		"nested/source.go":     "package nested\n",
+		"generated/output.go":  "package generated\n",
+		".env":                 "CEKAT_ACCESS_TOKEN=test-secret-token\n",
+		"credentials.txt":      "test-secret-token\n",
+		".netrc":               "machine api.example.test login user password test-secret-token\n",
+		".npmrc":               "//registry.example.test/:_authToken=test-secret-token\n",
+		".pypirc":              "[pypi]\nusername = user\npassword = test-secret-token\n",
+		"id_rsa":               "test-secret-token\n",
+		"private.pem":          "test-secret-token\n",
+		"private.key":          "test-secret-token\n",
+		"service-account.json": "{\"private_key\":\"test-secret-token\"}\n",
+		"auth.json":            "{\"token\":\"test-secret-token\"}\n",
+		"README.md":            "# test package\n",
 	} {
 		fullPath := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {

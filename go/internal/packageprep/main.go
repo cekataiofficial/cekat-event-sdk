@@ -122,7 +122,7 @@ func trackedSourceFiles(moduleRoot string) ([]string, error) {
 	}
 	var files []string
 	for _, file := range strings.Split(strings.TrimSuffix(output, "\x00"), "\x00") {
-		if file == "" || excludedSourcePath(file) {
+		if file == "" || excludedSourcePath(file) || !allowedSourcePath(file) {
 			continue
 		}
 		if filepath.IsAbs(file) || strings.Contains(file, "\\") || !safeRelativePath(file) {
@@ -155,12 +155,36 @@ func excludedSourcePath(file string) bool {
 	for _, part := range parts {
 		lower := strings.ToLower(part)
 		if part == ".git" || part == "generated" || part == "dist" || part == "build" || part == "coverage" ||
-			part == ".env" || strings.HasPrefix(part, ".env.") || strings.Contains(lower, "credential") ||
-			strings.Contains(lower, "secret") || strings.Contains(lower, "token") {
+			part == ".env" || strings.HasPrefix(part, ".env.") || credentialSourceName(lower) ||
+			strings.Contains(lower, "credential") || strings.Contains(lower, "secret") ||
+			strings.Contains(lower, "token") {
 			return true
 		}
 	}
 	return false
+}
+
+// allowedSourcePath admits only source, module metadata, documentation, and the
+// two tracked local wrappers. New artifact file types must be deliberately added.
+func allowedSourcePath(file string) bool {
+	if file == "go.mod" || file == "go.sum" || file == "README.md" || file == "COMPATIBILITY.md" ||
+		file == "scripts/package" || file == "scripts/conformance" {
+		return true
+	}
+	return strings.HasSuffix(file, ".go")
+}
+
+func credentialSourceName(name string) bool {
+	if name == ".netrc" || name == ".npmrc" || name == ".pypirc" || name == "id_rsa" ||
+		name == "id_dsa" || name == "id_ecdsa" || name == "id_ed25519" ||
+		name == "authorized_keys" || name == "known_hosts" || name == "auth.json" ||
+		name == "service-account.json" || name == "service_account.json" ||
+		name == "credentials.json" {
+		return true
+	}
+	return strings.HasSuffix(name, ".pem") || strings.HasSuffix(name, ".key") ||
+		strings.HasSuffix(name, ".p12") || strings.HasSuffix(name, ".pfx") ||
+		strings.HasSuffix(name, ".jks") || strings.HasSuffix(name, ".keystore")
 }
 
 func safeRelativePath(path string) bool {

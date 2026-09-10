@@ -1,6 +1,6 @@
 # Cekat Go Event SDK
 
-`github.com/cekataiofficial/cekat-event-sdk-go` synchronously submits Cekat events over HTTP. It supports Go 1.26 and the standard `net/http`, Gin, Echo, Fiber, and Chi request middleware adapters.
+`github.com/cekataiofficial/cekat-event-sdk-go` synchronously submits Cekat events over HTTP. It supports Go 1.26 and the standard `net/http` middleware plus Gin v1, Echo v4, Fiber v3, and Chi v5 request middleware adapters.
 
 ```sh
 go get github.com/cekataiofficial/cekat-event-sdk-go
