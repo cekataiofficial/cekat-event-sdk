@@ -4,7 +4,9 @@ package server
 import (
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,6 +114,11 @@ func handleIngest(w http.ResponseWriter, r *http.Request, store *state.State) {
 		normalizedName := strings.ToLower(name)
 		headers[normalizedName] = append(headers[normalizedName], values...)
 	}
+	// Journal header values are an unordered multivalue representation, so sort
+	// each copied slice to make journal output deterministic.
+	for _, values := range headers {
+		sort.Strings(values)
+	}
 	store.Record(state.RequestRecord{
 		Method:  r.Method,
 		Path:    r.URL.Path,
@@ -202,11 +209,11 @@ func (r responseInput) responseSpec() (state.ResponseSpec, bool) {
 	if r.Status != nil && (*r.Status < http.StatusOK || *r.Status > 599) {
 		return state.ResponseSpec{}, false
 	}
-	if r.DelayMS != nil && *r.DelayMS < 0 {
+	if r.DelayMS != nil && (*r.DelayMS < 0 || int64(*r.DelayMS) > math.MaxInt64/int64(time.Millisecond)) {
 		return state.ResponseSpec{}, false
 	}
 	for name, value := range r.Headers {
-		if !validHeaderName(name) || strings.ContainsAny(value, "\r\n") {
+		if !validHeaderName(name) || !validHeaderValue(value) {
 			return state.ResponseSpec{}, false
 		}
 	}
@@ -225,6 +232,18 @@ func (r responseInput) responseSpec() (state.ResponseSpec, bool) {
 		response.DisconnectBeforeHeaders = *r.DisconnectBeforeHeaders
 	}
 	return response, true
+}
+
+// validHeaderValue accepts HTTP field-value bytes: visible ASCII, obs-text,
+// spaces, and HTAB. Other control bytes (including CR, LF, and DEL) are invalid.
+func validHeaderValue(value string) bool {
+	for i := 0; i < len(value); i++ {
+		character := value[i]
+		if character < ' ' && character != '\t' || character == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func validHeaderName(name string) bool {

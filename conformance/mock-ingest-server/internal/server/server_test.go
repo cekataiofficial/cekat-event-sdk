@@ -104,6 +104,63 @@ func TestControlResetReplaceAndStrictResponseDecoding(t *testing.T) {
 	}
 }
 
+func TestQueuedResponseValidationRejectsProhibitedHeaderControlsAndDurationOverflow(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{
+			name: "NUL header value",
+			body: `{"responses":[{"status":200,"headers":{"X-Test":"bad\u0000value"},"body":"invalid"}]}`,
+		},
+		{
+			name: "SOH header value",
+			body: `{"responses":[{"status":200,"headers":{"X-Test":"bad\u0001value"},"body":"invalid"}]}`,
+		},
+		{
+			name: "DEL header value",
+			body: `{"responses":[{"status":200,"headers":{"X-Test":"bad\u007fvalue"},"body":"invalid"}]}`,
+		},
+		{
+			name: "duration overflow",
+			body: `{"responses":[{"status":200,"body":"invalid","delay_ms":9223372036855}]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(New(state.New()))
+			defer srv.Close()
+
+			postJSON(t, srv.URL+"/__control/responses", `{"responses":[{"status":201,"body":"retained"}]}`, http.StatusNoContent)
+			response := rawPost(t, srv.URL+"/__control/responses", tc.body)
+			gotBody, err := io.ReadAll(response.Body)
+			response.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.StatusCode != http.StatusBadRequest || response.Header.Get("Content-Type") != "application/json" || string(gotBody) != `{"error":"invalid request"}` {
+				t.Fatalf("invalid queue response = (%d, %q, %q), want (400, application/json, static error)", response.StatusCode, response.Header.Get("Content-Type"), gotBody)
+			}
+
+			postJSON(t, srv.URL+"/api/events/ingest", `{}`, http.StatusCreated)
+			if requests := journal(t, srv.URL).Requests; len(requests) != 1 {
+				t.Fatalf("rejected queue input journaled or consumed queue: %#v", requests)
+			}
+		})
+	}
+
+	t.Run("HTAB header value is accepted", func(t *testing.T) {
+		srv := httptest.NewServer(New(state.New()))
+		defer srv.Close()
+
+		postJSON(t, srv.URL+"/__control/responses", `{"responses":[{"status":200,"headers":{"X-Test":"one\ttwo"},"body":"ok"}]}`, http.StatusNoContent)
+		response := rawPost(t, srv.URL+"/api/events/ingest", `{}`)
+		response.Body.Close()
+		if got := response.Header.Get("X-Test"); got != "one\ttwo" {
+			t.Fatalf("queued HTAB header = %q, want %q", got, "one\ttwo")
+		}
+	})
+}
+
 func TestIngestJournalsUnchangedBodyNormalizedHeadersAndFIFO(t *testing.T) {
 	srv := httptest.NewServer(New(state.New()))
 	defer srv.Close()
@@ -135,8 +192,8 @@ func TestIngestJournalsUnchangedBodyNormalizedHeadersAndFIFO(t *testing.T) {
 	if first.Sequence != 1 || first.Method != http.MethodPost || first.Path != "/api/events/ingest" || first.Body != body {
 		t.Fatalf("first journal request = %#v", first)
 	}
-	if values := first.Headers["x-multi"]; len(values) != 3 || !hasAll(values, "first", "second", "third") {
-		t.Fatalf("x-multi = %#v, want all values", values)
+	if values := first.Headers["x-multi"]; !equalStrings(values, []string{"first", "second", "third"}) {
+		t.Fatalf("x-multi = %#v, want deterministically sorted values", values)
 	}
 	for name := range first.Headers {
 		if name != strings.ToLower(name) {
@@ -287,16 +344,12 @@ func rawPost(t *testing.T, url, body string) *http.Response {
 	return nil
 }
 
-func hasAll(values []string, wants ...string) bool {
-	for _, want := range wants {
-		found := false
-		for _, value := range values {
-			if value == want {
-				found = true
-				break
-			}
-		}
-		if !found {
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
 			return false
 		}
 	}
