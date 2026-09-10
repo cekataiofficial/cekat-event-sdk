@@ -109,3 +109,26 @@ owner['login'].casefold() == 'cekataiofficial'
 repository HTTP status in {'200', '404'}
 # If 200, repository full_name must case-fold to cekataiofficial/cekat-event-sdk-go.
 ```
+
+## Release-time verification (2026-09-10 UTC) — BLOCKED
+
+The following release evidence was collected immediately before approval. The selected module metadata was intentionally left unchanged: `go mod tidy` was inspected and reverted because it would introduce historical, non-Task-12 dependency classification and checksum churn. `go list -m -u -json all` completed successfully; the selected framework versions have no reported update in that output (Gin v1.12.0, Echo v4.15.4, Fiber v3.5.0, and Chi v5.3.2). It did report `github.com/quic-go/quic-go` v0.59.0 has an available v0.62.0 update.
+
+```text
+$ curl -fsSL 'https://go.dev/dl/?mode=json' > /tmp/cekat-go-releases-release.json
+# First stable records: go1.27.1 and go1.26.8
+
+$ cd go
+$ go list -m -u -json all > /tmp/cekat-go-module-updates-release.json
+# exit 0
+
+$ go install golang.org/x/vuln/cmd/govulncheck@latest
+# exit 0
+
+$ govulncheck ./...
+# exit 3: code is affected by five vulnerabilities
+```
+
+`govulncheck` found reachable vulnerabilities in the installed Go 1.26.5 runtime: GO-2026-6218 (`net/url`, fixed in Go 1.26.6), GO-2026-6090 (`crypto/tls`, fixed in Go 1.26.6), GO-2026-5972 (`encoding/asn1`, fixed in Go 1.26.6), and GO-2026-5026 (`net/http`, fixed in Go 1.26.6). It also found GO-2026-5676 in required transitive module `github.com/quic-go/quic-go` v0.59.0, fixed in v0.59.1. The scan additionally reported imported/required vulnerability findings without detected calls; this record does **not** claim a clean or vulnerability-free scan.
+
+**Decision: release readiness is BLOCKED.** A release owner must upgrade the runtime to Go 1.26.6 or later and update the resolved `github.com/quic-go/quic-go` dependency to at least v0.59.1, then rerun the complete package, compatibility, and vulnerability evidence gates. No registry ownership, tag creation, signing, or publishing was performed or authorized here. The local archive and manifest prepared by `scripts/package` are inspection artifacts only and are not release-approved while these blockers remain.
