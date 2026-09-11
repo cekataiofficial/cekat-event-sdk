@@ -1,6 +1,6 @@
 # Node SDK compatibility evidence
 
-Retrieved: 2026-09-11T06:36:37.510Z
+Retrieved: 2026-09-11T10:53:18.609Z
 
 ## Official sources
 
@@ -20,7 +20,7 @@ The compatibility gate selected active even-numbered Node LTS lines 22, 24: each
 | @types/node | 22.20.2 | ^22.0.0 |
 | Express | 5.2.1 | ^5.0.0 |
 | @types/express | 5.0.6 | ^5.0.0 |
-| Fastify | 5.12.3 | ^5.0.0 |
+| Fastify | 5.12.4 | ^5.0.0 |
 | fastify-plugin | 6.0.0 | ^6.0.0 |
 | Koa | 3.2.1 | ^3.0.0 |
 | @types/koa | 3.0.3 | ^3.0.0 |

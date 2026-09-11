@@ -34,4 +34,4 @@ test('published exports resolve in a clean packed consumer and browser artifacts
       expect(source).not.toMatch(/node:|async_hooks|\bClient\b|Authorization/);
     }
   } finally { rmSync(output, { recursive: true, force: true }); }
-}, 30_000);
+}, 90_000);

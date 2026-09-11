@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "overrides": {
+    "multer": "2.3.0"
+  },
   "engines": {
     "node": ">=22.0.0 <28.0.0"
   },
@@ -44,11 +53,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json && node scripts/check-browser-boundary.mjs",
-    "test": "node --test test/compatibility/verify-compatibility.test.mjs",
+    "test": "node --test test/compatibility/verify-compatibility.test.mjs test/package/package-script.test.mjs && vitest run",
     "test:browser": "playwright test --pass-with-no-tests",
     "test:conformance": "vitest run test/conformance/sdk.test.ts",
     "check:exports": "node scripts/check-exports.mjs",
     "verify:compatibility": "node scripts/verify-compatibility.mjs",
+    "check:approved-outdated": "node scripts/check-approved-outdated.mjs",
     "check:browser-boundary": "node scripts/check-browser-boundary.mjs"
   },
   "peerDependencies": {
@@ -105,10 +115,10 @@
     "@types/koa": "3.0.3",
     "@types/node": "22.20.2",
     "@vitest/coverage-v8": "5.0.0",
-    "ajv": "^8.17.1",
+    "ajv": "8.20.0",
     "axios": "1.20.0",
     "express": "5.2.1",
-    "fastify": "5.12.3",
+    "fastify": "5.12.4",
     "fastify-plugin": "6.0.0",
     "jsdom": "26.1.0",
     "koa": "3.2.1",
