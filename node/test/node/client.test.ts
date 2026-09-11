@@ -99,31 +99,40 @@ describe('Client configuration', () => {
       const assertion = expect(outcome).rejects.toMatchObject({ name: 'TransportError', attempts: 3 });
 
       expect(fetch).toHaveBeenCalledOnce();
+      const firstAttemptStartedAt = attemptStartedAt[0];
+      expect(firstAttemptStartedAt).toBeDefined();
+      if (firstAttemptStartedAt === undefined) throw new Error('Expected first attempt start time');
       await vi.advanceTimersByTimeAsync(9_999);
       expect(fetch).toHaveBeenCalledOnce();
       expect(attemptAbortedAt).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(1);
-      expect(attemptAbortedAt).toEqual([attemptStartedAt[0] + 10_000]);
+      expect(attemptAbortedAt).toEqual([firstAttemptStartedAt + 10_000]);
       await vi.advanceTimersByTimeAsync(1);
       expect(fetch).toHaveBeenCalledTimes(2);
+      const secondAttemptStartedAt = attemptStartedAt[1];
+      expect(secondAttemptStartedAt).toBeDefined();
+      if (secondAttemptStartedAt === undefined) throw new Error('Expected second attempt start time');
 
       await vi.advanceTimersByTimeAsync(9_999);
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(attemptAbortedAt).toHaveLength(1);
       await vi.advanceTimersByTimeAsync(1);
       expect(attemptAbortedAt).toEqual([
-        attemptStartedAt[0] + 10_000,
-        attemptStartedAt[1] + 10_000,
+        firstAttemptStartedAt + 10_000,
+        secondAttemptStartedAt + 10_000,
       ]);
       await vi.advanceTimersByTimeAsync(1);
       expect(fetch).toHaveBeenCalledTimes(3);
+      const thirdAttemptStartedAt = attemptStartedAt[2];
+      expect(thirdAttemptStartedAt).toBeDefined();
+      if (thirdAttemptStartedAt === undefined) throw new Error('Expected third attempt start time');
 
       await vi.advanceTimersByTimeAsync(10_000);
       await assertion;
       expect(attemptAbortedAt).toEqual([
-        attemptStartedAt[0] + 10_000,
-        attemptStartedAt[1] + 10_000,
-        attemptStartedAt[2] + 10_000,
+        firstAttemptStartedAt + 10_000,
+        secondAttemptStartedAt + 10_000,
+        thirdAttemptStartedAt + 10_000,
       ]);
     } finally {
       random.mockRestore();
