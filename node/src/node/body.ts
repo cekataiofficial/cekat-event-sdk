@@ -3,16 +3,19 @@ export const MAX_RESPONSE_BYTES = 65_536;
 export interface BoundedBody {
   rawBody: string;
   bodyTruncated: boolean;
+  /** Bytes examined within the bounded prefix-plus-sentinel protocol. */
+  observedBodyBytes: number;
 }
 
 /** Reads no more than the retained prefix plus one sentinel byte from a response stream. */
 export async function readBoundedBody(response: Response, signal?: AbortSignal): Promise<BoundedBody> {
   const reader = response.body?.getReader();
-  if (reader === undefined) return { rawBody: '', bodyTruncated: false };
+  if (reader === undefined) return { rawBody: '', bodyTruncated: false, observedBodyBytes: 0 };
 
   const retained = new Uint8Array(MAX_RESPONSE_BYTES);
   let length = 0;
   let bodyTruncated = false;
+  let observedBodyBytes = 0;
   const abort = () => {
     void reader.cancel().catch(() => {
       // Cancellation is resource cleanup; the caller's abort reason remains authoritative.
@@ -26,6 +29,9 @@ export async function readBoundedBody(response: Response, signal?: AbortSignal):
       const { done, value } = await readWithSignal(reader, signal);
       if (done) break;
       const remaining = MAX_RESPONSE_BYTES - length;
+      // A large transport chunk need not be retained in full: once the prefix
+      // is full, inspecting one further byte is sufficient to prove truncation.
+      observedBodyBytes += Math.min(value.byteLength, remaining + 1);
       if (value.byteLength <= remaining) {
         retained.set(value, length);
         length += value.byteLength;
@@ -51,6 +57,7 @@ export async function readBoundedBody(response: Response, signal?: AbortSignal):
   return {
     rawBody: new TextDecoder('utf-8', { fatal: false }).decode(retained.subarray(0, length)),
     bodyTruncated,
+    observedBodyBytes,
   };
 }
 

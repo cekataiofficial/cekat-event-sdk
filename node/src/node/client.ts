@@ -14,15 +14,23 @@ interface NormalizedOptions {
   readonly dependencies: DeliveryDependencies;
 }
 
+/** Test-only delivery controls; this is intentionally not re-exported by the package barrel. */
+export interface ClientTestDeliveryDependencies {
+  sleep?: DeliveryDependencies['sleep'];
+  random?: DeliveryDependencies['random'];
+  observeBody?: DeliveryDependencies['observeBody'];
+}
+
+const clientOptions = new WeakMap<Client, NormalizedOptions>();
+
 /** Sends Cekat events to the configured ingest origin. */
 export class Client {
   readonly #accessToken: string;
-  readonly #options: NormalizedOptions;
 
   constructor(accessToken: string, options: ClientOptions = {}) {
     validateAccessToken(accessToken);
     this.#accessToken = accessToken;
-    this.#options = normalizeOptions(this.#accessToken, options);
+    clientOptions.set(this, normalizeOptions(this.#accessToken, options));
   }
 
   userRegistration(event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
@@ -47,8 +55,34 @@ export class Client {
 
   private track(eventKey: string, isCommon: boolean, event: EventInput, options: CallOptions | undefined): Promise<Acknowledgement> {
     const payload = buildPayload(eventKey, isCommon, event, currentVisitorId());
-    return deliver(this.#options.delivery, payload, options ?? {}, this.#options.dependencies);
+    const configured = clientOptions.get(this);
+    if (configured === undefined) throw new Error('client delivery configuration is unavailable');
+    return deliver(configured.delivery, payload, options ?? {}, configured.dependencies);
   }
+}
+
+/**
+ * Creates a client with deterministic delivery controls for source-level tests.
+ * This helper is deliberately absent from the public node barrel and package exports.
+ */
+export function createClientForTesting(
+  accessToken: string,
+  options: ClientOptions,
+  dependencies: ClientTestDeliveryDependencies,
+): Client {
+  const client = new Client(accessToken, options);
+  const configured = clientOptions.get(client);
+  if (configured === undefined) throw new Error('client delivery configuration is unavailable');
+  clientOptions.set(client, {
+    delivery: configured.delivery,
+    dependencies: {
+      ...configured.dependencies,
+      ...(dependencies.sleep === undefined ? {} : { sleep: dependencies.sleep }),
+      ...(dependencies.random === undefined ? {} : { random: dependencies.random }),
+      ...(dependencies.observeBody === undefined ? {} : { observeBody: dependencies.observeBody }),
+    },
+  });
+  return client;
 }
 
 function normalizeOptions(accessToken: string, options: ClientOptions): NormalizedOptions {

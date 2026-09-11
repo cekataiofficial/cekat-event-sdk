@@ -1,4 +1,4 @@
-import { readBoundedBody } from './body.js';
+import { readBoundedBody, type BoundedBody } from './body.js';
 import {
   ApiError,
   AuthenticationError,
@@ -19,6 +19,8 @@ export interface DeliveryDependencies {
   fetch: FetchLike;
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   random: () => number;
+  /** Internal/test instrumentation invoked after a final response body is consumed. */
+  observeBody?: (body: BoundedBody) => void;
 }
 
 const RETRY_RESPONSE = Symbol('retry response');
@@ -38,7 +40,7 @@ export async function deliver(
           await cancelBody(response);
           return RETRY_RESPONSE;
         }
-        return classifyResponse(response, attempts, signal);
+        return classifyResponse(response, attempts, signal, dependencies.observeBody);
       });
       if (result !== RETRY_RESPONSE) return result;
     } catch (error) {
@@ -119,8 +121,15 @@ async function abortableSleep(
   });
 }
 
-async function classifyResponse(response: Response, attempts: number, signal: AbortSignal): Promise<Acknowledgement> {
-  const { rawBody, bodyTruncated } = await readBoundedBody(response, signal);
+async function classifyResponse(
+  response: Response,
+  attempts: number,
+  signal: AbortSignal,
+  observeBody: DeliveryDependencies['observeBody'],
+): Promise<Acknowledgement> {
+  const body = await readBoundedBody(response, signal);
+  observeBody?.(body);
+  const { rawBody, bodyTruncated } = body;
   if (response.status === 200) {
     if (bodyTruncated) throw new ResponseDecodeError('response body exceeds 65536 bytes', rawBody, attempts);
     try {
