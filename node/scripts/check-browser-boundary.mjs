@@ -3,9 +3,11 @@
 import { access, readdir, readFile } from 'node:fs/promises';
 import { resolve, relative, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createScanner } from 'typescript/unstable/ast/scanner';
 
 const sourceExtensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs'];
-const importPattern = /(?:import\s*(?:[^'"()]*?\s*from\s*)?|export\s+(?:[^'"]*?\s*from\s*)?|import\s*\()\s*['"]([^'"]+)['"]/g;
+const endOfFileToken = 1;
+const stringLiteralToken = 10;
 
 async function filesUnder(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -29,13 +31,73 @@ async function resolveLocalImport(from, specifier) {
   }
   return undefined;
 }
-function importsIn(source) {
-  return [...source.matchAll(importPattern)].map((match) => match[1]);
+function tokensIn(source, file) {
+  const scanner = createScanner(true, 0, source);
+  const tokens = [];
+  for (let kind = scanner.scan(); kind !== endOfFileToken; kind = scanner.scan()) {
+    if (scanner.isUnterminated()) throw new Error(`Unable to parse browser/Edge source ${file}: unterminated token`);
+    tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
+  }
+  return tokens;
+}
+function importsIn(source, file) {
+  const tokens = tokensIn(source, file);
+  const specifiers = [];
+  const delimiters = new Map([['(', ')'], ['[', ']'], ['{', '}']]);
+  const nesting = [];
+  for (const token of tokens) {
+    if (delimiters.has(token.text)) nesting.push(token.text);
+    else if ([...delimiters.values()].includes(token.text)) {
+      if (delimiters.get(nesting.pop()) !== token.text) throw new Error(`Unable to parse browser/Edge source ${file}: unmatched delimiter`);
+    }
+  }
+  if (nesting.length) throw new Error(`Unable to parse browser/Edge source ${file}: unmatched delimiter`);
+
+  const stringAt = (index) => tokens[index]?.kind === stringLiteralToken ? tokens[index].value : undefined;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.text === 'import') {
+      const first = tokens[index + 1];
+      if (first?.text === '(') {
+        const specifier = stringAt(index + 2);
+        if (specifier) specifiers.push(specifier);
+        continue;
+      }
+      const direct = stringAt(index + 1);
+      if (direct) {
+        specifiers.push(direct);
+        continue;
+      }
+      let foundFrom = false;
+      for (let cursor = index + 1; cursor < tokens.length && ![';', 'import', 'export'].includes(tokens[cursor].text); cursor += 1) {
+        if (tokens[cursor].text === 'from') foundFrom = true;
+        else if (foundFrom) {
+          const specifier = stringAt(cursor);
+          if (specifier) specifiers.push(specifier);
+          break;
+        }
+      }
+    } else if (token.text === 'export') {
+      let foundFrom = false;
+      for (let cursor = index + 1; cursor < tokens.length && ![';', 'import', 'export'].includes(tokens[cursor].text); cursor += 1) {
+        if (tokens[cursor].text === 'from') foundFrom = true;
+        else if (foundFrom) {
+          const specifier = stringAt(cursor);
+          if (specifier) specifiers.push(specifier);
+          break;
+        }
+      }
+    } else if (token.text === 'require' && tokens[index + 1]?.text === '(') {
+      const specifier = stringAt(index + 2);
+      if (specifier) specifiers.push(specifier);
+    }
+  }
+  return specifiers;
 }
 /**
  * Traverses local imports from browser exports and actual Next Edge entrypoints.
- * Nonrelative specifiers are package boundaries; only a reachable local node:
- * builtin is a browser/Edge leak.
+ * The TypeScript compiler lexer identifies static imports, re-exports, literal
+ * dynamic imports, and literal require calls without regex syntax gaps.
  */
 export async function assertBrowserBoundary({ projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url))) } = {}) {
   const sourceRoot = resolve(projectRoot, 'src');
@@ -51,11 +113,12 @@ export async function assertBrowserBoundary({ projectRoot = resolve(fileURLToPat
     if (visited.has(file)) continue;
     visited.add(file);
     const source = await readFile(file, 'utf8');
-    for (const specifier of importsIn(source)) {
+    for (const specifier of importsIn(source, relative(projectRoot, file))) {
       if (specifier.startsWith('node:')) violations.push(relative(projectRoot, file));
-      else {
+      else if (specifier.startsWith('.')) {
         const imported = await resolveLocalImport(file, specifier);
-        if (imported) pending.push(imported);
+        if (!imported) throw new Error(`Unable to resolve local browser/Edge import ${specifier} from ${relative(projectRoot, file)}`);
+        pending.push(imported);
       }
     }
   }

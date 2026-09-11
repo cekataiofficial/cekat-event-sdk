@@ -175,26 +175,35 @@ test('collects official sources and propagates thrown or malformed npm metadata 
   );
 });
 
-test('traverses local browser and Next Edge imports to reject direct and transitive node built-ins', async () => {
+test('parses browser and Next Edge dependency graphs to reject reachable node built-ins', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cekat-browser-boundary-'));
   try {
     const browserRoot = join(root, 'src/browser');
     const edgeRoot = join(root, 'src/integrations/nextjs/edge');
+    const sharedRoot = join(root, 'src/shared');
     await mkdir(browserRoot, { recursive: true });
-    await mkdir(join(root, 'src/shared'), { recursive: true });
+    await mkdir(sharedRoot, { recursive: true });
     await mkdir(edgeRoot, { recursive: true });
-    await writeFile(join(browserRoot, 'direct.ts'), "import 'node:fs';\n");
+
+    await writeFile(join(browserRoot, 'direct.ts'), "import /* comment */ 'node:fs';\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /direct\.ts/);
 
     await rm(join(browserRoot, 'direct.ts'));
     await writeFile(join(browserRoot, 'index.ts'), "export * from '../shared/browser-safe.js';\n");
-    await writeFile(join(root, 'src/shared/browser-safe.ts'), "import 'node:path';\nexport const value = 1;\n");
+    await writeFile(join(sharedRoot, 'browser-safe.ts'), "import('node:path');\nexport const value = 1;\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /browser-safe\.ts/);
 
     await rm(join(browserRoot, 'index.ts'));
     await writeFile(join(edgeRoot, 'index.ts'), "export * from '../../../shared/edge-helper.js';\n");
-    await writeFile(join(root, 'src/shared/edge-helper.ts'), "import 'node:crypto';\nexport const value = 1;\n");
+    await writeFile(join(sharedRoot, 'edge-helper.ts'), "const crypto = require('node:crypto');\nexport { crypto };\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /edge-helper\.ts/);
+
+    await rm(join(edgeRoot, 'index.ts'));
+    await writeFile(join(browserRoot, 'index.ts'), "export * from '../shared/missing.js';\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /Unable to resolve local browser\/Edge import/);
+
+    await writeFile(join(browserRoot, 'index.ts'), "import { value from '../shared/browser-safe.js';\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /Unable to parse browser\/Edge source/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
