@@ -95,10 +95,18 @@ describe('Client configuration', () => {
       expect(fetch).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(9_999);
       expect(fetch).toHaveBeenCalledOnce();
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.runOnlyPendingTimersAsync();
+      expect(fetch).toHaveBeenCalledTimes(2);
 
-      await assertion;
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.runOnlyPendingTimersAsync();
       expect(fetch).toHaveBeenCalledTimes(3);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
     } finally {
       random.mockRestore();
       vi.useRealTimers();
