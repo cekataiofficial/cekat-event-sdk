@@ -1,6 +1,6 @@
 # Node SDK compatibility evidence
 
-Retrieved: 2026-09-11T06:06:20.484Z
+Retrieved: 2026-09-11T06:25:10.524Z
 
 ## Official sources
 
@@ -8,12 +8,12 @@ Retrieved: 2026-09-11T06:06:20.484Z
 - Node distribution index: https://nodejs.org/dist/index.json
 - npm registry: `npm view <package> versions time engines dist-tags --json; npm view <package>@<version> engines --json`
 
-The compatibility gate selected active even-numbered Node LTS lines 22, 24: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node 22.0.0 (>=22.0.0 <28.0.0); odd, EOL, and package-engine-incompatible lines are not supported. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.
+The compatibility gate selected active even-numbered Node LTS lines 22, 24: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node 22.0.0 (>=22.0.0 <28.0.0); odd, EOL, and package-engine-incompatible lines are not supported. TypeScript is deliberately pinned to 5.9.3, the current compatible stable 5.9.x release, because the browser/Edge boundary guard uses its supported createSourceFile compiler API for fail-closed AST parsing. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.
 
 | Component | Exact observed version | Selected support range |
 | --- | --- | --- |
 | Node.js | v22.23.2 | >=22.0.0 <26.0.0 |
-| TypeScript | 7.0.2 | ^7.0.0 |
+| TypeScript | 5.9.3 | ^5.0.0 |
 | Vitest | 5.0.0 | ^5.0.0 |
 | Playwright | 1.63.0 | ^1.0.0 |
 | SemVer (npm maintained range evaluator) | 7.8.5 | ^7.0.0 |

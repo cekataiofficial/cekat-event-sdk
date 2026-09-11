@@ -13,6 +13,7 @@ import { compare, minVersion, parse, prerelease, satisfies, validRange } from 's
 const NODE_SCHEDULE_URL = 'https://raw.githubusercontent.com/nodejs/Release/main/schedule.json';
 const NODE_INDEX_URL = 'https://nodejs.org/dist/index.json';
 const NPM_SOURCE = 'npm view <package> versions time engines dist-tags --json; npm view <package>@<version> engines --json';
+const TYPESCRIPT_COMPILER_API_VERSION = '5.9.3';
 const packageNames = {
   typescript: 'typescript', vitest: 'vitest', playwright: 'playwright', semver: 'semver',
   'types-node': '@types/node', express: 'express', 'types-express': '@types/express',
@@ -22,9 +23,10 @@ const packageNames = {
   nextjs: 'next', axios: 'axios',
 };
 // Tooling is recorded and locked but does not define this SDK's consumer runtime
-// support. Every runtime, declaration, and plugin package does.
+// support. TypeScript is included because the boundary guard executes its parser.
+// Every runtime, declaration, and plugin package does.
 const runtimeEngineKeys = new Set([
-  'types-node', 'express', 'types-express', 'fastify', 'fastify-plugin', 'koa', 'types-koa',
+  'typescript', 'types-node', 'express', 'types-express', 'fastify', 'fastify-plugin', 'koa', 'types-koa',
   'nestjs', 'nestjs-core', 'nestjs-platform-express', 'nestjs-platform-fastify', 'nextjs', 'axios',
 ]);
 
@@ -108,7 +110,10 @@ export function evaluateCompatibility(input, { now = new Date().toISOString(), s
   for (const key of Object.keys(packageNames)) {
     metadata[key] = metadataFor(input, key);
     const expectedMajor = key === 'types-node' ? floorMajor : undefined;
-    versions[key] = latestStable(metadata[key].versions, expectedMajor);
+    versions[key] = key === 'typescript'
+      ? TYPESCRIPT_COMPILER_API_VERSION
+      : latestStable(metadata[key].versions, expectedMajor);
+    if (key === 'typescript' && !metadata[key].versions.includes(versions[key])) fail(`official npm metadata does not include required TypeScript compiler API version ${versions[key]}`);
     if (!metadata[key].time[versions[key]]) fail(`official npm metadata has no publication time for ${packageNames[key]} ${versions[key]}`);
     const engine = engineFor(metadata[key], versions[key]);
     if (key === 'nextjs' && engine === undefined) fail(`Next.js ${versions[key]} has no engines.node metadata to establish Node engine compatibility`);
@@ -140,7 +145,7 @@ export function renderCompatibilityMarkdown(evidence) {
     'types-node': '@types/node', express: 'Express', 'types-express': '@types/express', fastify: 'Fastify', 'fastify-plugin': 'fastify-plugin', koa: 'Koa', 'types-koa': '@types/koa', nestjs: '@nestjs/common', 'nestjs-core': '@nestjs/core', 'nestjs-platform-express': '@nestjs/platform-express', 'nestjs-platform-fastify': '@nestjs/platform-fastify', nextjs: 'Next.js (Node engine compatibility)', axios: 'Axios',
   };
   const rows = [['Node.js', evidence.node.versions[evidence.node.floor], evidence.node.range], ...Object.entries(evidence.versions).map(([key, version]) => [labels[key], version, `^${parseVersion(version).major}.0.0`])];
-  return `# Node SDK compatibility evidence\n\nRetrieved: ${evidence.retrievedAt}\n\n## Official sources\n\n- Node release schedule: ${evidence.sources.nodeSchedule}\n- Node distribution index: ${evidence.sources.nodeIndex}\n- npm registry: \`${evidence.sources.npm}\`\n\nThe compatibility gate selected active even-numbered Node LTS lines ${evidence.node.majors.join(', ')}: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node ${evidence.nodeFloor} (${evidence.packageNodeRange}); odd, EOL, and package-engine-incompatible lines are not supported. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.\n\n| Component | Exact observed version | Selected support range |\n| --- | --- | --- |\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
+  return `# Node SDK compatibility evidence\n\nRetrieved: ${evidence.retrievedAt}\n\n## Official sources\n\n- Node release schedule: ${evidence.sources.nodeSchedule}\n- Node distribution index: ${evidence.sources.nodeIndex}\n- npm registry: \`${evidence.sources.npm}\`\n\nThe compatibility gate selected active even-numbered Node LTS lines ${evidence.node.majors.join(', ')}: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node ${evidence.nodeFloor} (${evidence.packageNodeRange}); odd, EOL, and package-engine-incompatible lines are not supported. TypeScript is deliberately pinned to ${TYPESCRIPT_COMPILER_API_VERSION}, the current compatible stable 5.9.x release, because the browser/Edge boundary guard uses its supported createSourceFile compiler API for fail-closed AST parsing. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.\n\n| Component | Exact observed version | Selected support range |\n| --- | --- | --- |\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
 }
 
 async function fetchJsonFromUrl(url) {
@@ -175,7 +180,10 @@ export async function collectOfficialMetadata({ fetchJson = fetchJsonFromUrl, np
   const packages = {};
   for (const [key, name] of Object.entries(packageNames)) {
     const metadata = npmMetadata(name, npmView);
-    const version = latestStable(metadata.versions, key === 'types-node' ? 22 : undefined);
+    const version = key === 'typescript'
+      ? TYPESCRIPT_COMPILER_API_VERSION
+      : latestStable(metadata.versions, key === 'types-node' ? 22 : undefined);
+    if (key === 'typescript' && !metadata.versions.includes(version)) fail(`official npm metadata does not include required TypeScript compiler API version ${version}`);
     try {
       const selected = npmView(name, version);
       if (!selected || !selected.engines || typeof selected.engines !== 'object') fail(`official npm metadata is unavailable or malformed for ${name}@${version}`);

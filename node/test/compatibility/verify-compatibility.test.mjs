@@ -45,7 +45,7 @@ function fixtures() {
     nodeSchedule,
     nodeIndex,
     packages: {
-      typescript: metadata(['5.8.3'], engines(['5.8.3'])),
+      typescript: metadata(['5.8.3', '5.9.3'], engines(['5.8.3', '5.9.3'])),
       vitest: metadata(['3.2.4'], engines(['3.2.4'])),
       playwright: metadata(['1.54.0'], engines(['1.54.0'])),
       semver: metadata(['7.8.5'], engines(['7.8.5'])),
@@ -80,6 +80,12 @@ test('uses the complete npm semver evaluator and advertises only active LTS line
   assert.equal(evidence.versions.nestjs, '12.1.0');
   assert.equal(evidence.versions['nestjs-core'], '12.1.0');
   assert.equal(evidence.versions.semver, '7.8.5');
+  assert.equal(evidence.versions.typescript, '5.9.3');
+
+  const missingCompilerApi = fixtures();
+  missingCompilerApi.packages.typescript.versions = ['5.8.3'];
+  missingCompilerApi.packages.typescript.time = { '5.8.3': '2026-09-01T00:00:00.000Z' };
+  assert.throws(() => evaluateCompatibility(missingCompilerApi, { now: retrievedAt, packageNodeRange: '>=22.0.0 <28.0.0' }), /required TypeScript compiler API version 5\.9\.3/);
 
   const futureLts = fixtures();
   futureLts.nodeSchedule.v22.end = '2026-01-01';
@@ -125,6 +131,7 @@ test('renders evidence that limits Next.js conclusions to Node engine compatibil
   assert.match(markdown, new RegExp(sources.nodeSchedule.replace(/[./]/g, '\\$&')));
   assert.match(markdown, /Node\.js \| v22\.18\.0 \| >=22\.0\.0 <26\.0\.0/);
   assert.match(markdown, /SemVer \(npm maintained range evaluator\) \| 7\.8\.5/);
+  assert.match(markdown, /TypeScript is deliberately pinned to 5\.9\.3.*createSourceFile compiler API/);
   assert.match(markdown, /Next\.js \(Node engine compatibility\)/);
   assert.doesNotMatch(markdown, /restricted to its Node runtime/i);
   assert.match(markdown, /does not establish a Next\.js runtime boundary/i);
@@ -199,10 +206,19 @@ test('parses browser and Next Edge dependency graphs to reject reachable node bu
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /edge-helper\.ts/);
 
     await rm(join(edgeRoot, 'index.ts'));
+    await writeFile(join(browserRoot, 'index.ts'), "const filesystem = (require)('node:fs');\nexport { filesystem };\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /index\.ts/);
+
+    await writeFile(join(browserRoot, 'index.ts'), "const filesystem = require?.('node:fs');\nexport { filesystem };\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /index\.ts/);
+
+    await writeFile(join(browserRoot, 'index.ts'), "import filesystem = require('node:fs');\nexport { filesystem };\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /index\.ts/);
+
     await writeFile(join(browserRoot, 'index.ts'), "export * from '../shared/missing.js';\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /Unable to resolve local browser\/Edge import/);
 
-    await writeFile(join(browserRoot, 'index.ts'), "import { value from '../shared/browser-safe.js';\n");
+    await writeFile(join(browserRoot, 'index.ts'), "import { value } 'node:fs';\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /Unable to parse browser\/Edge source/);
   } finally {
     await rm(root, { recursive: true, force: true });

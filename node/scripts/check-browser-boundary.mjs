@@ -3,11 +3,9 @@
 import { access, readdir, readFile } from 'node:fs/promises';
 import { resolve, relative, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createScanner } from 'typescript/unstable/ast/scanner';
+import ts from 'typescript';
 
 const sourceExtensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs'];
-const endOfFileToken = 1;
-const stringLiteralToken = 10;
 
 async function filesUnder(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -31,73 +29,44 @@ async function resolveLocalImport(from, specifier) {
   }
   return undefined;
 }
-function tokensIn(source, file) {
-  const scanner = createScanner(true, 0, source);
-  const tokens = [];
-  for (let kind = scanner.scan(); kind !== endOfFileToken; kind = scanner.scan()) {
-    if (scanner.isUnterminated()) throw new Error(`Unable to parse browser/Edge source ${file}: unterminated token`);
-    tokens.push({ kind, text: scanner.getTokenText(), value: scanner.getTokenValue() });
+function scriptKindFor(file) {
+  switch (extname(file)) {
+    case '.tsx': return ts.ScriptKind.TSX;
+    case '.js': case '.mjs': case '.cjs': return ts.ScriptKind.JS;
+    default: return ts.ScriptKind.TS;
   }
-  return tokens;
+}
+function stringValue(node) { return ts.isStringLiteral(node) ? node.text : undefined; }
+function unparenthesized(expression) {
+  while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
+  return expression;
 }
 function importsIn(source, file) {
-  const tokens = tokensIn(source, file);
-  const specifiers = [];
-  const delimiters = new Map([['(', ')'], ['[', ']'], ['{', '}']]);
-  const nesting = [];
-  for (const token of tokens) {
-    if (delimiters.has(token.text)) nesting.push(token.text);
-    else if ([...delimiters.values()].includes(token.text)) {
-      if (delimiters.get(nesting.pop()) !== token.text) throw new Error(`Unable to parse browser/Edge source ${file}: unmatched delimiter`);
-    }
-  }
-  if (nesting.length) throw new Error(`Unable to parse browser/Edge source ${file}: unmatched delimiter`);
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKindFor(file));
+  if (sourceFile.parseDiagnostics.length) throw new Error(`Unable to parse browser/Edge source ${file}: ${ts.flattenDiagnosticMessageText(sourceFile.parseDiagnostics[0].messageText, ' ')}`);
 
-  const stringAt = (index) => tokens[index]?.kind === stringLiteralToken ? tokens[index].value : undefined;
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token.text === 'import') {
-      const first = tokens[index + 1];
-      if (first?.text === '(') {
-        const specifier = stringAt(index + 2);
-        if (specifier) specifiers.push(specifier);
-        continue;
-      }
-      const direct = stringAt(index + 1);
-      if (direct) {
-        specifiers.push(direct);
-        continue;
-      }
-      let foundFrom = false;
-      for (let cursor = index + 1; cursor < tokens.length && ![';', 'import', 'export'].includes(tokens[cursor].text); cursor += 1) {
-        if (tokens[cursor].text === 'from') foundFrom = true;
-        else if (foundFrom) {
-          const specifier = stringAt(cursor);
-          if (specifier) specifiers.push(specifier);
-          break;
-        }
-      }
-    } else if (token.text === 'export') {
-      let foundFrom = false;
-      for (let cursor = index + 1; cursor < tokens.length && ![';', 'import', 'export'].includes(tokens[cursor].text); cursor += 1) {
-        if (tokens[cursor].text === 'from') foundFrom = true;
-        else if (foundFrom) {
-          const specifier = stringAt(cursor);
-          if (specifier) specifiers.push(specifier);
-          break;
-        }
-      }
-    } else if (token.text === 'require' && tokens[index + 1]?.text === '(') {
-      const specifier = stringAt(index + 2);
-      if (specifier) specifiers.push(specifier);
+  const specifiers = [];
+  const addString = (node) => {
+    const specifier = node && stringValue(node);
+    if (specifier !== undefined) specifiers.push(specifier);
+  };
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) addString(node.moduleSpecifier);
+    else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) addString(node.moduleReference.expression);
+    else if (ts.isCallExpression(node)) {
+      const callee = unparenthesized(node.expression);
+      if (callee.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(callee) && callee.text === 'require')) addString(node.arguments[0]);
     }
-  }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
   return specifiers;
 }
 /**
  * Traverses local imports from browser exports and actual Next Edge entrypoints.
- * The TypeScript compiler lexer identifies static imports, re-exports, literal
- * dynamic imports, and literal require calls without regex syntax gaps.
+ * TypeScript's parser rejects malformed source before AST traversal identifies
+ * static imports, re-exports, external import-equals declarations, literal
+ * dynamic imports, and literal require calls.
  */
 export async function assertBrowserBoundary({ projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url))) } = {}) {
   const sourceRoot = resolve(projectRoot, 'src');
