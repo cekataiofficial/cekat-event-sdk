@@ -55,6 +55,16 @@ describe('visitor request scope', () => {
     expect(currentVisitorId()).toBeUndefined();
   });
 
+  it('skips blank exact matching cookies to use the first later nonblank value', () => {
+    const result = runWithVisitorFromHeaders(
+      {},
+      '_cekat_visitor_id= \t ; _cekat_visitor_id= visitor-2 ; _cekat_visitor_id=visitor-3',
+      currentVisitorId,
+    );
+
+    expect(result).toBe('visitor-2');
+  });
+
   it('preserves callback returns and rejections', async () => {
     const marker = { result: 'value' };
     const failure = new Error('callback rejection');

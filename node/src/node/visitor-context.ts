@@ -52,7 +52,8 @@ function visitorIdFromCookie(cookieHeader: string): string | undefined {
     const separator = cookie.indexOf('=');
     if (separator === -1) continue;
     if (cookie.slice(0, separator).trim() !== VISITOR_COOKIE) continue;
-    return normalizeVisitorId(cookie.slice(separator + 1));
+    const visitorId = normalizeVisitorId(cookie.slice(separator + 1));
+    if (visitorId !== undefined) return visitorId;
   }
   return undefined;
 }
