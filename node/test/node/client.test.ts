@@ -85,8 +85,14 @@ describe('Client configuration', () => {
     vi.useFakeTimers();
     const random = vi.spyOn(Math, 'random').mockReturnValue(0);
     try {
+      const attemptStartedAt: number[] = [];
+      const attemptAbortedAt: number[] = [];
       const fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+        attemptStartedAt.push(Date.now());
+        init?.signal?.addEventListener('abort', () => {
+          attemptAbortedAt.push(Date.now());
+          reject(init.signal?.reason);
+        }, { once: true });
       }));
       const client = new Client('token', { fetch });
       const outcome = client.userLogin({ email: 'ada@example.test' });
@@ -95,18 +101,30 @@ describe('Client configuration', () => {
       expect(fetch).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(9_999);
       expect(fetch).toHaveBeenCalledOnce();
+      expect(attemptAbortedAt).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(1);
-      await vi.runOnlyPendingTimersAsync();
+      expect(attemptAbortedAt).toEqual([attemptStartedAt[0] + 10_000]);
+      await vi.advanceTimersByTimeAsync(1);
       expect(fetch).toHaveBeenCalledTimes(2);
 
       await vi.advanceTimersByTimeAsync(9_999);
       expect(fetch).toHaveBeenCalledTimes(2);
+      expect(attemptAbortedAt).toHaveLength(1);
       await vi.advanceTimersByTimeAsync(1);
-      await vi.runOnlyPendingTimersAsync();
+      expect(attemptAbortedAt).toEqual([
+        attemptStartedAt[0] + 10_000,
+        attemptStartedAt[1] + 10_000,
+      ]);
+      await vi.advanceTimersByTimeAsync(1);
       expect(fetch).toHaveBeenCalledTimes(3);
 
       await vi.advanceTimersByTimeAsync(10_000);
       await assertion;
+      expect(attemptAbortedAt).toEqual([
+        attemptStartedAt[0] + 10_000,
+        attemptStartedAt[1] + 10_000,
+        attemptStartedAt[2] + 10_000,
+      ]);
     } finally {
       random.mockRestore();
       vi.useRealTimers();
