@@ -54,6 +54,48 @@ test('fetch keeps Request body, credentials, signal, and response semantics', as
   expect(observed?.headers['x-cekat-visitor-id']).toBe('cookie-visitor');
 });
 
+test('fetch accepts URL input and rejects wrapper input errors asynchronously', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const disable = window.cekat.enableAutoPropagation({ allowedTargets: [{ origin: location.origin, pathPrefix: '/api/' }] });
+    const urlResponse = await fetch(new URL('/api/url-input', location.href));
+    const consumed = new Request('/api/consumed', { method: 'POST', body: 'consumed-body' });
+    await consumed.text();
+
+    async function rejectionBehavior(input: Request | string): Promise<{ returnedPromise: boolean; threwSynchronously: boolean; rejectedAsynchronously: boolean }> {
+      let returnedPromise = false;
+      let threwSynchronously = false;
+      let afterCall = false;
+      let rejectedAsynchronously = false;
+      try {
+        const result = fetch(input);
+        returnedPromise = result instanceof Promise;
+        result.catch(() => { rejectedAsynchronously = afterCall; });
+        afterCall = true;
+        await result.catch(() => undefined);
+      } catch {
+        threwSynchronously = true;
+      }
+      return { returnedPromise, threwSynchronously, rejectedAsynchronously };
+    }
+
+    const result = {
+      urlStatus: urlResponse.status,
+      consumed: await rejectionBehavior(consumed),
+      malformed: await rejectionBehavior('http://%'),
+    };
+    disable();
+    return result;
+  });
+
+  expect(result).toEqual({
+    urlStatus: 200,
+    consumed: { returnedPromise: true, threwSynchronously: false, rejectedAsynchronously: true },
+    malformed: { returnedPromise: true, threwSynchronously: false, rejectedAsynchronously: true },
+  });
+  const observed = (await requests()).find(({ path }) => path === '/api/url-input');
+  expect(observed?.headers['x-cekat-visitor-id']).toBe('cookie-visitor');
+});
+
 test('uses one idempotent installation and restores the exact fetch method', async ({ page }) => {
   const result = await page.evaluate(() => {
     const original = window.fetch;

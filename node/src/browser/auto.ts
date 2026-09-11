@@ -59,10 +59,16 @@ export function enableAutoPropagation(options: AutoPropagationOptions): Disable 
   const xhrStates = new WeakMap<XMLHttpRequest, XhrState>();
 
   const wrappedFetch: typeof globalThis.fetch = (input, init) => {
-    // Request(input, init) consumes a Request's body. Clone it first so the caller's
-    // Request remains usable while the single constructed request carries its settings.
-    const request = new Request(input instanceof Request ? input.clone() : input, init);
-    return originalFetch(matchesAllowedTarget(targets, new URL(request.url)) ? withVisitorRequest(request) : request);
+    let requestToFetch: Request;
+    try {
+      // Request(input, init) consumes a Request's body. Clone it first so the caller's
+      // Request remains usable while the single constructed request carries its settings.
+      const request = new Request(input instanceof Request ? input.clone() : input, init);
+      requestToFetch = matchesAllowedTarget(targets, new URL(request.url)) ? withVisitorRequest(request) : request;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    return originalFetch(requestToFetch);
   };
 
   const wrappedOpen: Open = function wrappedOpen(this: XMLHttpRequest, ...args: unknown[]): void {
