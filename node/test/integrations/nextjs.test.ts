@@ -1,21 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import * as nextNodeRuntimeFixture from './nextjs-node-runtime.fixture.js';
 import { runWithCekatVisitor, withCekatVisitor } from '../../src/integrations/nextjs.js';
 import { currentVisitorId } from '../../src/node/visitor-context.js';
-
-const nextNodeRuntimeFixture = `
-import { runWithCekatVisitor, withCekatVisitor } from '@cekat/event-sdk/nextjs';
-
-export const runtime = 'nodejs';
-
-export const GET = (request: Request) => runWithCekatVisitor(request, async () => {
-  return Response.json({ visitorId: currentVisitorId() });
-});
-
-export default withCekatVisitor(async (request, response) => {
-  response.end(currentVisitorId());
-});
-`;
 
 afterEach(() => {
   delete (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime;
@@ -23,8 +10,14 @@ afterEach(() => {
 });
 
 describe('Next.js Node-runtime visitor wrappers', () => {
-  it('documents Node runtime explicitly in the Next fixture', () => {
-    expect(nextNodeRuntimeFixture).toMatch(/export const runtime = ['"]nodejs['"]/);
+  it('executes the typed Node-runtime App Router fixture', async () => {
+    const response = nextNodeRuntimeFixture.GET(new Request('https://example.test/route', {
+      headers: { 'x-cekat-visitor-id': 'fixture-visitor' },
+    }));
+
+    expect(nextNodeRuntimeFixture.runtime).toBe('nodejs');
+    expect(nextNodeRuntimeFixture.default).toBeTypeOf('function');
+    await expect(response.json()).resolves.toEqual({ visitorId: 'fixture-visitor' });
   });
 
   it('scopes Pages/API Node request headers through awaited handlers and preserves the returned result', async () => {
@@ -70,7 +63,7 @@ describe('Next.js Node-runtime visitor wrappers', () => {
     await expect(handler({ headers: { 'x-cekat-visitor-id': 'failure-visitor' } }, {})).rejects.toBe(expected);
   });
 
-  it('rejects Edge invocation clearly before using visitor scope helpers', () => {
+  it('best-effort rejects an Edge marker only after this Node-only module has loaded', () => {
     (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime = 'edge-runtime';
     const pagesHandler = withCekatVisitor(() => 'unreachable');
     const request = new Request('https://example.test/route');
