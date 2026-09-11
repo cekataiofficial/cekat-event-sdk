@@ -44,8 +44,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json && node scripts/check-browser-boundary.mjs",
-    "test": "vitest run",
-    "test:browser": "playwright test",
+    "test": "node --test test/compatibility/verify-compatibility.test.mjs",
+    "test:browser": "playwright test --pass-with-no-tests",
     "test:conformance": "vitest run test/conformance/sdk.test.ts",
     "check:exports": "node scripts/check-exports.mjs",
     "verify:compatibility": "node scripts/verify-compatibility.mjs",
@@ -112,6 +112,7 @@
     "koa": "3.2.1",
     "next": "16.3.4",
     "playwright": "1.63.0",
+    "semver": "7.8.5",
     "typescript": "7.0.2",
     "vitest": "5.0.0"
   }

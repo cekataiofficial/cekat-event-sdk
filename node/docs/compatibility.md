@@ -1,14 +1,14 @@
 # Node SDK compatibility evidence
 
-Retrieved: 2026-09-11T04:50:29.795Z
+Retrieved: 2026-09-11T06:06:20.484Z
 
 ## Official sources
 
 - Node release schedule: https://raw.githubusercontent.com/nodejs/Release/main/schedule.json
 - Node distribution index: https://nodejs.org/dist/index.json
-- npm registry: `npm view <package> versions time engines dist-tags --json`
+- npm registry: `npm view <package> versions time engines dist-tags --json; npm view <package>@<version> engines --json`
 
-The compatibility gate selected active even-numbered Node LTS lines 22, 24: each line has started, reached its LTS date, and is not EOL. The declared package engine floor is Node 22.0.0 (>=22.0.0 <28.0.0); odd and EOL lines are not supported. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard will reject Node-only imports from browser/Edge-reachable source paths when a Next adapter is added.
+The compatibility gate selected active even-numbered Node LTS lines 22, 24: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node 22.0.0 (>=22.0.0 <28.0.0); odd, EOL, and package-engine-incompatible lines are not supported. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.
 
 | Component | Exact observed version | Selected support range |
 | --- | --- | --- |
@@ -16,6 +16,7 @@ The compatibility gate selected active even-numbered Node LTS lines 22, 24: each
 | TypeScript | 7.0.2 | ^7.0.0 |
 | Vitest | 5.0.0 | ^5.0.0 |
 | Playwright | 1.63.0 | ^1.0.0 |
+| SemVer (npm maintained range evaluator) | 7.8.5 | ^7.0.0 |
 | @types/node | 22.20.2 | ^22.0.0 |
 | Express | 5.2.1 | ^5.0.0 |
 | @types/express | 5.0.6 | ^5.0.0 |

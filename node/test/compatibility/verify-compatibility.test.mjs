@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   collectOfficialMetadata,
   evaluateCompatibility,
+  permitsNodeVersion,
   renderCompatibilityMarkdown,
   runCli,
 } from '../../scripts/verify-compatibility.mjs';
+import { assertBrowserBoundary } from '../../scripts/check-browser-boundary.mjs';
 
 const retrievedAt = '2026-09-10T12:00:00.000Z';
 const sources = {
@@ -34,22 +39,23 @@ function fixtures() {
     { version: 'v22.18.0', lts: 'Jod', date: '2026-09-01' },
     { version: 'v26.0.0', lts: false, date: '2026-05-20' },
   ];
-  const engines = (versions) => Object.fromEntries(versions.map((version) => [version, { node: '>=22.0.0' }]));
+  const engines = (versions, range = '>=22.0.0') => Object.fromEntries(versions.map((version) => [version, { node: range }]));
   const nestVersions = ['12.0.0', '12.1.0'];
   return {
     nodeSchedule,
     nodeIndex,
     packages: {
-      typescript: metadata(['5.8.3']),
-      vitest: metadata(['3.2.4']),
-      playwright: metadata(['1.54.0']),
-      '@types/node': metadata(['22.15.0', '24.0.0']),
+      typescript: metadata(['5.8.3'], engines(['5.8.3'])),
+      vitest: metadata(['3.2.4'], engines(['3.2.4'])),
+      playwright: metadata(['1.54.0'], engines(['1.54.0'])),
+      semver: metadata(['7.8.5'], engines(['7.8.5'])),
+      '@types/node': metadata(['22.15.0', '24.0.0'], engines(['22.15.0', '24.0.0'])),
       express: metadata(['5.0.0', '5.1.0'], engines(['5.0.0', '5.1.0'])),
-      '@types/express': metadata(['5.0.0', '5.0.1']),
+      '@types/express': metadata(['5.0.0', '5.0.1'], engines(['5.0.0', '5.0.1'])),
       fastify: metadata(['5.0.0', '5.1.0'], engines(['5.0.0', '5.1.0'])),
       'fastify-plugin': metadata(['6.0.0'], engines(['6.0.0'])),
       koa: metadata(['3.0.0', '3.1.0'], engines(['3.0.0', '3.1.0'])),
-      '@types/koa': metadata(['3.0.0', '3.0.1']),
+      '@types/koa': metadata(['3.0.0', '3.0.1'], engines(['3.0.0', '3.0.1'])),
       '@nestjs/common': metadata(nestVersions, engines(nestVersions)),
       '@nestjs/core': metadata(nestVersions, engines(nestVersions)),
       '@nestjs/platform-express': metadata(nestVersions, engines(nestVersions)),
@@ -60,11 +66,20 @@ function fixtures() {
   };
 }
 
-test('selects only started LTS lines and validates exact engine floors, declarations, and Nest companions', () => {
+function npmViewForFixture(name, version) {
+  const packageMetadata = fixtures().packages[name];
+  return version ? { engines: packageMetadata.engines[version] ?? {} } : packageMetadata;
+}
+
+test('uses the complete npm semver evaluator and advertises only active LTS lines every selected package supports', () => {
+  assert.equal(permitsNodeVersion('>=22.0.0-rc.1 <25.0.0', '22.0.0'), true);
+  assert.equal(permitsNodeVersion('^22.0.0 || >=24.0.0 <25.0.0', '24.3.0'), true);
+
   const evidence = evaluateCompatibility(fixtures(), { now: retrievedAt, sources, packageNodeRange: '>=22.0.0 <28.0.0' });
   assert.deepEqual(evidence.node.majors, [22, 24]);
   assert.equal(evidence.versions.nestjs, '12.1.0');
   assert.equal(evidence.versions['nestjs-core'], '12.1.0');
+  assert.equal(evidence.versions.semver, '7.8.5');
 
   const futureLts = fixtures();
   futureLts.nodeSchedule.v22.end = '2026-01-01';
@@ -74,6 +89,19 @@ test('selects only started LTS lines and validates exact engine floors, declarat
   const incompatibleExactFloor = fixtures();
   incompatibleExactFloor.packages.fastify.engines['5.1.0'] = { node: '>=22.12.0' };
   assert.throws(() => evaluateCompatibility(incompatibleExactFloor, { now: retrievedAt, packageNodeRange: '>=22.0.0' }), /fastify.*22\.0\.0/i);
+
+  const excludesNode24 = fixtures();
+  excludesNode24.packages.fastify.engines['5.1.0'] = { node: '>=22.0.0 <24.0.0' };
+  assert.deepEqual(evaluateCompatibility(excludesNode24, { now: retrievedAt, packageNodeRange: '>=22.0.0' }).node, {
+    floor: 22,
+    majors: [22],
+    versions: { 22: 'v22.18.0' },
+    range: '>=22.0.0 <24.0.0',
+  });
+
+  const incompatibleTypes = fixtures();
+  incompatibleTypes.packages['@types/koa'].engines['3.0.1'] = { node: '>=24.0.0' };
+  assert.throws(() => evaluateCompatibility(incompatibleTypes, { now: retrievedAt, packageNodeRange: '>=22.0.0' }), /@types\/koa.*22\.0\.0/i);
 
   const declarationMismatch = fixtures();
   declarationMismatch.packages['@types/express'].versions = ['4.99.0'];
@@ -96,19 +124,20 @@ test('renders evidence that limits Next.js conclusions to Node engine compatibil
   assert.match(markdown, /2026-09-10T12:00:00\.000Z/);
   assert.match(markdown, new RegExp(sources.nodeSchedule.replace(/[./]/g, '\\$&')));
   assert.match(markdown, /Node\.js \| v22\.18\.0 \| >=22\.0\.0 <26\.0\.0/);
+  assert.match(markdown, /SemVer \(npm maintained range evaluator\) \| 7\.8\.5/);
   assert.match(markdown, /Next\.js \(Node engine compatibility\)/);
   assert.doesNotMatch(markdown, /restricted to its Node runtime/i);
   assert.match(markdown, /does not establish a Next\.js runtime boundary/i);
 });
 
-test('collects official sources and tests CLI write plus source failures through injected dependencies', async () => {
+test('collects official sources and propagates thrown or malformed npm metadata through the CLI', async () => {
   const calls = [];
   const collected = await collectOfficialMetadata({
     fetchJson: async (url) => {
       calls.push(url);
       return url === sources.nodeSchedule ? fixtures().nodeSchedule : fixtures().nodeIndex;
     },
-    npmView: (name) => fixtures().packages[name],
+    npmView: npmViewForFixture,
   });
   assert.equal(calls.length, 2);
   assert.equal(collected.packages.fastify, collected.packages.fastify);
@@ -129,11 +158,44 @@ test('collects official sources and tests CLI write plus source failures through
   assert.deepEqual(stdout, ['12.1.0\n']);
 
   await assert.rejects(
-    () => collectOfficialMetadata({ fetchJson: async () => { throw new Error('network unavailable'); }, npmView: () => ({}) }),
+    () => collectOfficialMetadata({ fetchJson: async () => { throw new Error('network unavailable'); }, npmView: npmViewForFixture }),
     /official Node metadata is unavailable/i,
   );
   await assert.rejects(
-    () => runCli([], { collect: async () => { throw new Error('official npm metadata is unavailable for next'); } }),
+    () => collectOfficialMetadata({ fetchJson: async (url) => url === sources.nodeSchedule ? fixtures().nodeSchedule : fixtures().nodeIndex, npmView: () => { throw new Error('registry unavailable'); } }),
     /official npm metadata is unavailable/i,
   );
+  await assert.rejects(
+    () => collectOfficialMetadata({ fetchJson: async (url) => url === sources.nodeSchedule ? fixtures().nodeSchedule : fixtures().nodeIndex, npmView: () => ({ versions: 'not-an-array' }) }),
+    /official npm metadata is unavailable or malformed/i,
+  );
+  await assert.rejects(
+    () => runCli([], { collect: () => collectOfficialMetadata({ fetchJson: async (url) => url === sources.nodeSchedule ? fixtures().nodeSchedule : fixtures().nodeIndex, npmView: () => { throw new Error('registry unavailable'); } }) }),
+    /official npm metadata is unavailable/i,
+  );
+});
+
+test('traverses local browser and Next Edge imports to reject direct and transitive node built-ins', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cekat-browser-boundary-'));
+  try {
+    const browserRoot = join(root, 'src/browser');
+    const edgeRoot = join(root, 'src/integrations/nextjs/edge');
+    await mkdir(browserRoot, { recursive: true });
+    await mkdir(join(root, 'src/shared'), { recursive: true });
+    await mkdir(edgeRoot, { recursive: true });
+    await writeFile(join(browserRoot, 'direct.ts'), "import 'node:fs';\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /direct\.ts/);
+
+    await rm(join(browserRoot, 'direct.ts'));
+    await writeFile(join(browserRoot, 'index.ts'), "export * from '../shared/browser-safe.js';\n");
+    await writeFile(join(root, 'src/shared/browser-safe.ts'), "import 'node:path';\nexport const value = 1;\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /browser-safe\.ts/);
+
+    await rm(join(browserRoot, 'index.ts'));
+    await writeFile(join(edgeRoot, 'index.ts'), "export * from '../../../shared/edge-helper.js';\n");
+    await writeFile(join(root, 'src/shared/edge-helper.ts'), "import 'node:crypto';\nexport const value = 1;\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /edge-helper\.ts/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
