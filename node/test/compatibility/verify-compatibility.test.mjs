@@ -131,7 +131,8 @@ test('renders evidence that limits Next.js conclusions to Node engine compatibil
   assert.match(markdown, new RegExp(sources.nodeSchedule.replace(/[./]/g, '\\$&')));
   assert.match(markdown, /Node\.js \| v22\.18\.0 \| >=22\.0\.0 <26\.0\.0/);
   assert.match(markdown, /SemVer \(npm maintained range evaluator\) \| 7\.8\.5/);
-  assert.match(markdown, /TypeScript is deliberately pinned to 5\.9\.3.*createSourceFile compiler API/);
+  assert.match(markdown, /TypeScript is deliberately pinned to the exact compatible version 5\.9\.3.*createSourceFile compiler API/);
+  assert.doesNotMatch(markdown, /current compatible stable 5\.9\.x/i);
   assert.match(markdown, /Next\.js \(Node engine compatibility\)/);
   assert.doesNotMatch(markdown, /restricted to its Node runtime/i);
   assert.match(markdown, /does not establish a Next\.js runtime boundary/i);
