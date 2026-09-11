@@ -21,6 +21,8 @@ export interface DeliveryDependencies {
   random: () => number;
 }
 
+const RETRY_RESPONSE = Symbol('retry response');
+
 export async function deliver(
   config: DeliveryConfig,
   payload: WirePayload,
@@ -30,30 +32,34 @@ export async function deliver(
   const maximumAttempts = config.retryCount + 1;
   for (let attempts = 1; attempts <= maximumAttempts; attempts += 1) {
     throwIfAborted(options.signal);
-    let result: AttemptResult;
     try {
-      result = await attempt(config, payload, options.signal, dependencies.fetch);
+      const result = await attempt(config, payload, options.signal, dependencies.fetch, async (response, signal) => {
+        if (response.status === 500 && attempts !== maximumAttempts) {
+          await cancelBody(response);
+          return RETRY_RESPONSE;
+        }
+        return classifyResponse(response, attempts, signal);
+      });
+      if (result !== RETRY_RESPONSE) return result;
     } catch (error) {
       throwIfAborted(options.signal);
+      if (isKnownOutcomeError(error)) throw error;
       if (attempts === maximumAttempts) {
-        throw new TransportError('event delivery failed after transport failures', attempts, error);
+        throw new TransportError('event delivery failed after transport failures', attempts, redactTransportCause(error, config.accessToken));
       }
-      await backoff(attempts, options.signal, dependencies);
-      continue;
     }
-
-    if (result.response.status !== 500) return classifyResponse(result.response, attempts);
-    if (attempts === maximumAttempts) return classifyResponse(result.response, attempts);
     await backoff(attempts, options.signal, dependencies);
   }
   throw new Error('unreachable');
 }
 
-interface AttemptResult {
-  response: Response;
-}
-
-async function attempt(config: DeliveryConfig, payload: WirePayload, callerSignal: AbortSignal | undefined, fetch: FetchLike): Promise<AttemptResult> {
+async function attempt<T>(
+  config: DeliveryConfig,
+  payload: WirePayload,
+  callerSignal: AbortSignal | undefined,
+  fetch: FetchLike,
+  consumeResponse: (response: Response, signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
   const abortForCaller = () => controller.abort(callerSignal?.reason ?? createAbortError());
   if (callerSignal?.aborted) abortForCaller();
@@ -70,14 +76,22 @@ async function attempt(config: DeliveryConfig, payload: WirePayload, callerSigna
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-    return { response };
+    throwIfAborted(callerSignal);
+    return await consumeResponse(response, controller.signal);
   } catch (error) {
     if (callerSignal?.aborted) throw callerSignal.reason ?? createAbortError();
-    // SDK timeouts and ordinary fetch failures are both retryable transport failures.
     throw error;
   } finally {
     clearTimeout(timer);
     callerSignal?.removeEventListener('abort', abortForCaller);
+  }
+}
+
+async function cancelBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // This is best-effort resource cleanup before a retry.
   }
 }
 
@@ -105,28 +119,24 @@ async function abortableSleep(
   });
 }
 
-function classifyResponse(response: Response, attempts: number): Promise<Acknowledgement> {
-  return readBoundedBody(response).then(({ rawBody, bodyTruncated }) => {
-    if (response.status === 200) {
-      if (bodyTruncated) {
-        throw new ResponseDecodeError('response body exceeds 65536 bytes', rawBody, attempts);
-      }
-      try {
-        const acknowledgement = parseAcknowledgement(rawBody);
-        return acknowledgement;
-      } catch (error) {
-        if (error instanceof ResponseDecodeError) throw error;
-        throw new ResponseDecodeError('response body is not a valid success envelope', rawBody, attempts, error);
-      }
+async function classifyResponse(response: Response, attempts: number, signal: AbortSignal): Promise<Acknowledgement> {
+  const { rawBody, bodyTruncated } = await readBoundedBody(response, signal);
+  if (response.status === 200) {
+    if (bodyTruncated) throw new ResponseDecodeError('response body exceeds 65536 bytes', rawBody, attempts);
+    try {
+      return parseAcknowledgement(rawBody);
+    } catch (error) {
+      if (error instanceof ResponseDecodeError) throw error;
+      throw new ResponseDecodeError('response body is not a valid success envelope', rawBody, attempts, error);
     }
+  }
 
-    const parsed = parseApiError(rawBody);
-    const message = parsed?.message ?? response.statusText;
-    const options = { rawBody, attempts, ...(parsed?.code === undefined ? {} : { code: parsed.code }) };
-    if (response.status === 401) throw new AuthenticationError(message, options);
-    if (response.status === 404) throw new EventDefinitionNotFoundError(message, options);
-    throw new ApiError(message, response.status, options);
-  });
+  const parsed = parseApiError(rawBody);
+  const message = parsed?.message ?? response.statusText;
+  const options = { rawBody, attempts, ...(parsed?.code === undefined ? {} : { code: parsed.code }) };
+  if (response.status === 401) throw new AuthenticationError(message, options);
+  if (response.status === 404) throw new EventDefinitionNotFoundError(message, options);
+  throw new ApiError(message, response.status, options);
 }
 
 function parseAcknowledgement(rawBody: string): Acknowledgement {
@@ -157,6 +167,32 @@ function parseApiError(rawBody: string): { message: string; code?: string } | un
   } catch {
     return undefined;
   }
+}
+
+function redactTransportCause(cause: unknown, token: string, seen = new WeakSet<object>()): unknown {
+  const redact = (value: string) => value.split(token).join('[REDACTED]');
+  if (cause instanceof Error) {
+    if (seen.has(cause)) return new Error('[circular transport cause]');
+    seen.add(cause);
+    const nested = redactTransportCause(cause.cause, token, seen);
+    const safe = new Error(redact(cause.message), cause.cause === undefined ? undefined : { cause: nested });
+    safe.name = redact(cause.name);
+    return safe;
+  }
+  if (typeof cause === 'string') return redact(cause);
+  if (cause !== null && typeof cause === 'object') {
+    if (seen.has(cause)) return '[circular transport cause]';
+    seen.add(cause);
+    return redact(String(cause));
+  }
+  return cause;
+}
+
+function isKnownOutcomeError(error: unknown): boolean {
+  return error instanceof ApiError ||
+    error instanceof AuthenticationError ||
+    error instanceof EventDefinitionNotFoundError ||
+    error instanceof ResponseDecodeError;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

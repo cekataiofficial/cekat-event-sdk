@@ -76,6 +76,7 @@ describe('deliver protocol and bounded bodies', () => {
 
     expect(exactError).toBeInstanceOf(ResponseDecodeError);
     expect((exactError as ResponseDecodeError).rawBody).toHaveLength(65_536);
+    expect((exactError as ResponseDecodeError).cause).toBeInstanceOf(Error);
     expect(oversizedError).toBeInstanceOf(ResponseDecodeError);
     expect((oversizedError as ResponseDecodeError).rawBody).toHaveLength(65_536);
     expect((oversizedError as ResponseDecodeError).cause).toBeUndefined();
@@ -88,6 +89,23 @@ describe('deliver protocol and bounded bodies', () => {
 
     expect(error).toBeInstanceOf(ResponseDecodeError);
     expect((error as ResponseDecodeError).rawBody.endsWith('\uFFFD')).toBe(true);
+  });
+
+  it('cancels the reader after observing byte 65,537', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(65_536).fill(0x61));
+        controller.enqueue(new Uint8Array([0x62]));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const error = await rejected(() => deliver(config, payload, {}, dependencies(async () => new Response(body, { status: 200 }))));
+
+    expect(error).toBeInstanceOf(ResponseDecodeError);
+    expect(cancelled).toBe(true);
   });
 
   it.each([
@@ -154,6 +172,95 @@ describe('deliver retry, timeout, redaction, and cancellation', () => {
       expect(fetch).toHaveBeenCalledTimes(3);
       expect((error as Error).message).not.toContain(config.accessToken);
       expect(String((error as Error).cause)).not.toContain(config.accessToken);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('redacts configured tokens from transport causes, including nested causes', async () => {
+    const fetch = vi.fn(async () => Promise.reject(new Error(`outer ${config.accessToken}`, {
+      cause: new Error(`inner ${config.accessToken}`),
+    })));
+    const error = await rejected(() => deliver(config, payload, {}, dependencies(fetch)));
+
+    expect(error).toBeInstanceOf(TransportError);
+    expect((error as Error).message).not.toContain(config.accessToken);
+    expect(String((error as Error).cause)).not.toContain(config.accessToken);
+    expect(String((error as Error & { cause: Error }).cause.cause)).not.toContain(config.accessToken);
+  });
+
+  it('retries stalled headers/body reads under the per-attempt SDK timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200 }));
+      const outcome = rejected(() => deliver(config, payload, {}, dependencies(fetch)));
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      const error = await outcome;
+      expect(error).toMatchObject({ name: 'TransportError', attempts: 3 });
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('preserves caller reason and does not retry when caller aborts after headers', async () => {
+    const controller = new AbortController();
+    const reason = new Error('caller stopped after headers');
+    const fetch = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200 }));
+    const outcome = deliver(config, payload, { signal: controller.signal }, dependencies(fetch));
+    await Promise.resolve();
+    controller.abort(reason);
+
+    await expect(outcome).rejects.toBe(reason);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('cancels intermediate retryable 500 bodies before retrying', async () => {
+    let cancelled = false;
+    const retryable = new Response(new ReadableStream<Uint8Array>({
+      start() {},
+      cancel() { cancelled = true; },
+    }), { status: 500 });
+    const fetch = vi.fn().mockResolvedValueOnce(retryable).mockResolvedValueOnce(response(200, success));
+
+    await expect(deliver(config, payload, {}, dependencies(fetch))).resolves.toMatchObject({ eventKey: 'order_paid' });
+    expect(cancelled).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes attempt timer and caller listener after successful response classification', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      let attemptSignal: AbortSignal | undefined;
+      const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        attemptSignal = init?.signal ?? undefined;
+        return response(200, success);
+      });
+      await expect(deliver({ ...config, timeoutMs: 1 }, payload, { signal: controller.signal }, dependencies(fetch))).resolves.toMatchObject({ eventKey: 'order_paid' });
+      controller.abort(new Error('late caller abort'));
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(attemptSignal?.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('preserves caller reason in a timer race without starting a retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const reason = new Error('caller won timer race');
+      setTimeout(() => controller.abort(reason), 10);
+      const fetch = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200 }));
+      const outcome = deliver({ ...config, timeoutMs: 10 }, payload, { signal: controller.signal }, dependencies(fetch));
+      const assertion = expect(outcome).rejects.toBe(reason);
+      await vi.advanceTimersByTimeAsync(10);
+
+      await assertion;
+      expect(fetch).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }
