@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { ValidationError } from '../../src/node/errors.js';
+import {
+  ApiError,
+  AuthenticationError,
+  EventDefinitionNotFoundError,
+  ResponseDecodeError,
+  TransportError,
+  ValidationError,
+} from '../../src/node/errors.js';
 import { buildPayload, validateAccessToken } from '../../src/node/validation.js';
 
 describe('strict local validation', () => {
@@ -101,17 +108,82 @@ describe('strict local validation', () => {
     expect(error.message).not.toContain(secret);
   });
 
-  it('rejects symbol keys, arrays with custom properties, and cycles without disclosing property values', () => {
+  it('accepts null-prototype property objects and ignores non-enumerable string and symbol values', () => {
+    const properties = Object.create(null) as Record<string, unknown>;
+    properties.visible = { nested: 'value' };
+    Object.defineProperty(properties, 'hidden', { enumerable: false, value: 'ignored' });
+    Object.defineProperty(properties, Symbol('hidden'), { enumerable: false, value: 'ignored' });
+
+    expect(buildPayload('order_paid', true, {
+      email: 'ada@example.test',
+      properties: properties as never,
+    }).properties).toEqual({ visible: { nested: 'value' } });
+  });
+
+  it('preserves own __proto__ JSON keys without mutating copied prototypes', () => {
+    const parsed = JSON.parse('{"__proto__":{"parsed":true}}');
+    const nullPrototype = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(nullPrototype, '__proto__', {
+      enumerable: true,
+      value: { nullPrototype: true },
+    });
+
+    for (const properties of [parsed, nullPrototype]) {
+      const copied = buildPayload('order_paid', true, {
+        email: 'ada@example.test',
+        properties: properties as never,
+      }).properties!;
+      expect(Object.hasOwn(copied, '__proto__')).toBe(true);
+      expect(Object.getPrototypeOf(copied)).toBe(Object.prototype);
+      expect(copied.__proto__).toEqual(properties.__proto__);
+    }
+  });
+
+  it('rejects enumerable accessors without invoking or disclosing them', () => {
+    const secret = 'accessor-secret-must-not-leak';
+    let changingReads = 0;
+    const changing = {} as Record<string, unknown>;
+    Object.defineProperty(changing, 'value', {
+      enumerable: true,
+      get: () => (changingReads++ === 0 ? 'initially valid' : new Date()),
+    });
+    let throwingReads = 0;
+    const throwing = {} as Record<string, unknown>;
+    Object.defineProperty(throwing, 'value', {
+      enumerable: true,
+      get: () => {
+        throwingReads += 1;
+        throw new Error(secret);
+      },
+    });
+
+    for (const properties of [changing, throwing]) {
+      const error = expectValidationError(() => buildPayload('order_paid', true, {
+        email: 'ada@example.test',
+        properties: properties as never,
+      }));
+      expect(error.message).toContain('properties.value');
+      expect(error.message).not.toContain(secret);
+    }
+    expect(changingReads).toBe(0);
+    expect(throwingReads).toBe(0);
+  });
+
+  it('rejects enumerable symbols, accessor arrays, sparse arrays, and custom array properties', () => {
     const symbolKeyed = { ordinary: 'value' } as Record<string | symbol, unknown>;
     symbolKeyed[Symbol('secret-key')] = 'property-value-must-not-leak';
+    const nestedSymbol = { nested: {} as Record<string | symbol, unknown> };
+    nestedSymbol.nested[Symbol('secret-key')] = 'property-value-must-not-leak';
     const arrayWithCustomProperty = ['value'] as unknown[] & { secret?: string };
     arrayWithCustomProperty.secret = 'property-value-must-not-leak';
-    const mapCycle: Record<string, unknown> = {};
-    mapCycle.self = mapCycle;
-    const arrayCycle: unknown[] = [];
-    arrayCycle.push(arrayCycle);
+    const sparseArray = ['value', , 'value'];
+    const accessorArray = ['value'];
+    Object.defineProperty(accessorArray, '0', {
+      enumerable: true,
+      get: () => { throw new Error('property-value-must-not-leak'); },
+    });
 
-    for (const properties of [symbolKeyed, { arrayWithCustomProperty }, mapCycle, { arrayCycle }]) {
+    for (const properties of [symbolKeyed, nestedSymbol, { arrayWithCustomProperty }, { sparseArray }, { accessorArray }]) {
       const error = expectValidationError(() => buildPayload('order_paid', true, {
         email: 'ada@example.test',
         properties: properties as never,
@@ -119,6 +191,70 @@ describe('strict local validation', () => {
       expect(error.message).toContain('properties');
       expect(error.message).not.toContain('property-value-must-not-leak');
     }
+  });
+
+  it('rejects direct and indirect cycles while accepting repeated references', () => {
+    const direct: Record<string, unknown> = {};
+    direct.self = direct;
+    const indirect: Record<string, unknown> = { child: {} };
+    (indirect.child as Record<string, unknown>).parent = indirect;
+    const shared = { value: 'reused' };
+
+    for (const properties of [direct, indirect]) {
+      expect(expectValidationError(() => buildPayload('order_paid', true, {
+        email: 'ada@example.test',
+        properties: properties as never,
+      })).message).toContain('contains a cycle');
+    }
+    expect(buildPayload('order_paid', true, {
+      email: 'ada@example.test',
+      properties: { first: shared, second: shared } as never,
+    }).properties).toEqual({ first: shared, second: shared });
+  });
+});
+
+describe('typed errors', () => {
+  it('constructs ValidationError with its public name and message', () => {
+    const error = new ValidationError('invalid event');
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe('ValidationError');
+    expect(error.message).toBe('invalid event');
+  });
+
+  it.each([
+    [AuthenticationError, 'AuthenticationError', 401],
+    [EventDefinitionNotFoundError, 'EventDefinitionNotFoundError', 404],
+  ] as const)('constructs %s fields and only defines a supplied code', (ErrorType, name, status) => {
+    const withCode = new ErrorType('request failed', { code: 'invalid_event', rawBody: 'body', attempts: 2 });
+    const withoutCode = new ErrorType('request failed', { rawBody: 'body', attempts: 2 });
+
+    expect(withCode).toMatchObject({ name, status, code: 'invalid_event', rawBody: 'body', attempts: 2, deliveryOutcomeUnknown: false });
+    expect(Object.hasOwn(withoutCode, 'code')).toBe(false);
+  });
+
+  it('constructs ApiError fields and only defines a supplied code', () => {
+    const withCode = new ApiError('request failed', 429, { code: 'rate_limited', rawBody: 'body', attempts: 3 });
+    const withoutCode = new ApiError('request failed', 500, { rawBody: 'body', attempts: 1 });
+
+    expect(withCode).toMatchObject({ name: 'ApiError', status: 429, code: 'rate_limited', rawBody: 'body', attempts: 3, deliveryOutcomeUnknown: false });
+    expect(Object.hasOwn(withoutCode, 'code')).toBe(false);
+  });
+
+  it('constructs TransportError with its required cause and unknown delivery outcome', () => {
+    const cause = new Error('socket closed');
+    const error = new TransportError('request failed', 2, cause);
+
+    expect(error).toMatchObject({ name: 'TransportError', attempts: 2, cause, deliveryOutcomeUnknown: true });
+  });
+
+  it('constructs ResponseDecodeError with optional cause semantics', () => {
+    const cause = new SyntaxError('unexpected token');
+    const withCause = new ResponseDecodeError('bad response', 'body', 1, cause);
+    const withoutCause = new ResponseDecodeError('bad response', 'body', 1);
+
+    expect(withCause).toMatchObject({ name: 'ResponseDecodeError', status: 200, rawBody: 'body', attempts: 1, cause, deliveryOutcomeUnknown: false });
+    expect(Object.hasOwn(withoutCause, 'cause')).toBe(false);
   });
 });
 

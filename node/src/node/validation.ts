@@ -37,9 +37,6 @@ function validateEvent(eventKey: string, event: EventInput): void {
       throw new ValidationError('event must include a non-blank email or phone number');
     }
   }
-  if (event.properties !== undefined) {
-    validateJsonValue(event.properties, 'properties', new WeakSet<object>());
-  }
 }
 
 function normalizeVisitorId(visitorId: string | undefined): string | undefined {
@@ -48,14 +45,14 @@ function normalizeVisitorId(visitorId: string | undefined): string | undefined {
   return normalized === '' ? undefined : normalized;
 }
 
-function validateJsonValue(value: unknown, path: string, ancestors: WeakSet<object>): void {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') return;
+function copyJsonValue(value: unknown, path: string, ancestors: WeakSet<object>): JsonValue {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return value;
 
   if (typeof value === 'number') {
     if (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value))) {
       invalidValue(path);
     }
-    return;
+    return value;
   }
 
   if (typeof value !== 'object') invalidValue(path);
@@ -74,37 +71,33 @@ function validateJsonValue(value: unknown, path: string, ancestors: WeakSet<obje
       for (const key of Object.keys(objectValue)) {
         if (!isArrayIndex(key, objectValue.length)) invalidValue(path);
       }
+      const copied: JsonValue[] = [];
       for (let index = 0; index < objectValue.length; index += 1) {
-        validateJsonValue(objectValue[index], `${path}[${index}]`, ancestors);
+        const key = String(index);
+        const descriptor = Object.getOwnPropertyDescriptor(objectValue, key);
+        if (descriptor === undefined || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+          invalidValue(`${path}[${index}]`);
+        }
+        copied.push(copyJsonValue(descriptor.value, `${path}[${index}]`, ancestors));
       }
-      return;
+      return copied;
     }
 
     const prototype = Object.getPrototypeOf(objectValue);
     if (prototype !== Object.prototype && prototype !== null) invalidValue(path);
-    for (const key of Object.keys(objectValue)) {
-      validateJsonValue((objectValue as Record<string, unknown>)[key], propertyPath(path, key), ancestors);
-    }
-  } finally {
-    ancestors.delete(objectValue);
-  }
-}
 
-function copyJsonValue(value: JsonValue, path: string, ancestors: WeakSet<object>): JsonValue {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string' || typeof value === 'number') return value;
-
-  const objectValue = value as object;
-  if (ancestors.has(objectValue)) {
-    throw new ValidationError(`${path} contains a cycle`);
-  }
-  ancestors.add(objectValue);
-  try {
-    if (Array.isArray(value)) {
-      return value.map((item, index) => copyJsonValue(item, `${path}[${index}]`, ancestors));
-    }
     const copied: { [key: string]: JsonValue } = {};
-    for (const key of Object.keys(value)) {
-      copied[key] = copyJsonValue(value[key]!, propertyPath(path, key), ancestors);
+    for (const key of Object.keys(objectValue)) {
+      const descriptor = Object.getOwnPropertyDescriptor(objectValue, key);
+      if (descriptor === undefined || !Object.hasOwn(descriptor, 'value')) {
+        invalidValue(propertyPath(path, key));
+      }
+      Object.defineProperty(copied, key, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: copyJsonValue(descriptor.value, propertyPath(path, key), ancestors),
+      });
     }
     return copied;
   } finally {

@@ -14,7 +14,7 @@ interface ApiErrorOptions {
 
 export class AuthenticationError extends Error {
   readonly status = 401 as const;
-  readonly code?: string;
+  declare readonly code?: string;
   readonly rawBody: string;
   readonly attempts: number;
   readonly deliveryOutcomeUnknown = false as const;
@@ -30,7 +30,7 @@ export class AuthenticationError extends Error {
 
 export class EventDefinitionNotFoundError extends Error {
   readonly status = 404 as const;
-  readonly code?: string;
+  declare readonly code?: string;
   readonly rawBody: string;
   readonly attempts: number;
   readonly deliveryOutcomeUnknown = false as const;
@@ -46,7 +46,7 @@ export class EventDefinitionNotFoundError extends Error {
 
 export class ApiError extends Error {
   readonly status: number;
-  readonly code?: string;
+  declare readonly code?: string;
   readonly rawBody: string;
   readonly attempts: number;
   readonly deliveryOutcomeUnknown = false as const;
@@ -79,13 +79,12 @@ export class ResponseDecodeError extends Error {
   readonly rawBody: string;
   readonly attempts: number;
   readonly deliveryOutcomeUnknown = false as const;
-  override readonly cause?: unknown;
+  declare readonly cause?: unknown;
 
   constructor(message: string, rawBody: string, attempts: number, cause?: unknown) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = 'ResponseDecodeError';
     this.rawBody = rawBody;
     this.attempts = attempts;
-    this.cause = cause;
   }
 }
