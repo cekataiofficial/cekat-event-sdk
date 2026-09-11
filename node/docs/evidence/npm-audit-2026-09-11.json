@@ -157,11 +157,11 @@
     },
     "dependencies": {
       "prod": 1,
-      "dev": 354,
-      "optional": 84,
+      "dev": 334,
+      "optional": 64,
       "peer": 38,
       "peerOptional": 0,
-      "total": 354
+      "total": 334
     }
   }
 }

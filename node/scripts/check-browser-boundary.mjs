@@ -36,7 +36,7 @@ function scriptKindFor(file) {
     default: return ts.ScriptKind.TS;
   }
 }
-function stringValue(node) { return ts.isStringLiteral(node) ? node.text : undefined; }
+function stringValue(node) { return ts.isStringLiteralLike(node) ? node.text : undefined; }
 function unparenthesized(expression) {
   while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
   return expression;
@@ -66,7 +66,8 @@ function importsIn(source, file) {
  * Traverses local imports from browser exports and actual Next Edge entrypoints.
  * TypeScript's parser rejects malformed source before AST traversal identifies
  * static imports, re-exports, external import-equals declarations, literal
- * dynamic imports, and literal require calls.
+ * dynamic imports, and literal require calls. Literal specifiers include quoted
+ * strings and no-substitution template literals.
  */
 export async function assertBrowserBoundary({ projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url))) } = {}) {
   const sourceRoot = resolve(projectRoot, 'src');

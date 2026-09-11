@@ -195,14 +195,20 @@ test('parses browser and Next Edge dependency graphs to reject reachable node bu
     await writeFile(join(browserRoot, 'direct.ts'), "import /* comment */ 'node:fs';\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /direct\.ts/);
 
+    await writeFile(join(browserRoot, 'direct.ts'), "import(`node:fs`);\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /direct\.ts/);
+
+    await writeFile(join(browserRoot, 'direct.ts'), "const filesystem = require(`node:fs`);\nexport { filesystem };\n");
+    await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /direct\.ts/);
+
     await rm(join(browserRoot, 'direct.ts'));
     await writeFile(join(browserRoot, 'index.ts'), "export * from '../shared/browser-safe.js';\n");
-    await writeFile(join(sharedRoot, 'browser-safe.ts'), "import('node:path');\nexport const value = 1;\n");
+    await writeFile(join(sharedRoot, 'browser-safe.ts'), "import(`node:path`);\nexport const value = 1;\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /browser-safe\.ts/);
 
     await rm(join(browserRoot, 'index.ts'));
     await writeFile(join(edgeRoot, 'index.ts'), "export * from '../../../shared/edge-helper.js';\n");
-    await writeFile(join(sharedRoot, 'edge-helper.ts'), "const crypto = require('node:crypto');\nexport { crypto };\n");
+    await writeFile(join(sharedRoot, 'edge-helper.ts'), "const crypto = require(`node:crypto`);\nexport { crypto };\n");
     await assert.rejects(() => assertBrowserBoundary({ projectRoot: root }), /edge-helper\.ts/);
 
     await rm(join(edgeRoot, 'index.ts'));
