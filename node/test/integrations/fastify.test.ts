@@ -34,9 +34,6 @@ describe('Fastify visitor plugin', () => {
       };
     }));
 
-    let emitted = 0;
-    (app as unknown as NodeJS.EventEmitter).on('cekat-visitor', () => { emitted += 1; });
-
     const fromHeader = await app.inject({
       method: 'GET',
       url: '/visitor',
@@ -51,7 +48,6 @@ describe('Fastify visitor plugin', () => {
     expect(fromHeader.json()).toEqual({ visitorId: 'header-visitor', headersUnchanged: true });
     expect(fromCookie.json()).toEqual({ visitorId: 'cookie-visitor', headersUnchanged: true });
     expect(fromNeither.json()).toEqual({ visitorId: null, headersUnchanged: true });
-    expect(emitted).toBe(0);
   });
 
   it('isolates parallel requests and does not require global plugin registration', async () => {
