@@ -51,6 +51,65 @@ function run(command, args, environment = {}) {
   });
 }
 
+async function sha256File(path) {
+  const file = await open(path, 'r');
+  const hash = createHash('sha256');
+  try {
+    for await (const chunk of file.createReadStream()) hash.update(chunk);
+  } finally {
+    await file.close();
+  }
+  return hash.digest('hex');
+}
+
+function assertSafeArtifactPath(path) {
+  if (typeof path !== 'string' || path.length === 0 || path.includes('\\') || path.includes('\0') || isAbsolute(path)) {
+    throw new TypeError(`unsafe artifact path: ${String(path)}`);
+  }
+  if (path.split('/').some((part) => part === '' || part === '.' || part === '..')) {
+    throw new TypeError(`unsafe artifact path: ${path}`);
+  }
+}
+
+/**
+ * Sort and verify manifest artifact metadata against exact regular output files.
+ * Exported so the multi-artifact manifest contract remains testable even though
+ * npm pack intentionally produces exactly one tarball.
+ */
+export async function normalizeAndValidateManifestArtifacts(output, artifacts) {
+  if (!Array.isArray(artifacts)) throw new TypeError('manifest artifacts must be an array');
+  const canonicalOutput = await realpath(output);
+  const paths = new Set();
+  const normalized = [];
+
+  for (const artifact of artifacts) {
+    if (artifact === null || typeof artifact !== 'object') throw new TypeError('invalid manifest artifact');
+    const { path, sha256, size_bytes: sizeBytes } = artifact;
+    assertSafeArtifactPath(path);
+    if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) {
+      throw new TypeError(`invalid SHA-256 for artifact: ${path}`);
+    }
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0) throw new TypeError(`invalid size for artifact: ${path}`);
+    if (paths.has(path)) throw new TypeError(`duplicate artifact path: ${path}`);
+    paths.add(path);
+
+    const artifactPath = resolve(canonicalOutput, ...path.split('/'));
+    const outputRelativePath = relative(canonicalOutput, artifactPath);
+    if (outputRelativePath.startsWith(`..${sep}`) || outputRelativePath === '..' || isAbsolute(outputRelativePath)) {
+      throw new TypeError(`unsafe artifact path: ${path}`);
+    }
+    const metadata = await lstat(artifactPath);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new TypeError(`manifest artifact is not a regular file: ${path}`);
+    }
+    if (metadata.size !== sizeBytes) throw new TypeError(`size does not match artifact: ${path}`);
+    if (await sha256File(artifactPath) !== sha256) throw new TypeError(`SHA-256 does not match artifact: ${path}`);
+    normalized.push({ path, sha256, size_bytes: sizeBytes });
+  }
+
+  return normalized.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+}
+
 async function regularArtifacts(output) {
   const entries = await readdir(output, { withFileTypes: true });
   const artifacts = [];
@@ -59,25 +118,15 @@ async function regularArtifacts(output) {
       throw new TypeError(`packaging output contains a non-regular artifact: ${entry.name}`);
     }
     if (entry.name === 'manifest.json') continue;
-    if (entry.name.includes('\\') || entry.name.includes('\0') || entry.name === '.' || entry.name === '..') {
-      throw new TypeError(`unsafe artifact path: ${entry.name}`);
-    }
     const path = resolve(output, entry.name);
-    const file = await open(path, 'r');
-    const hash = createHash('sha256');
-    try {
-      for await (const chunk of file.createReadStream()) hash.update(chunk);
-    } finally {
-      await file.close();
-    }
     const metadata = await stat(path);
-    artifacts.push({ path: entry.name, sha256: hash.digest('hex'), size_bytes: metadata.size });
+    artifacts.push({ path: entry.name, sha256: await sha256File(path), size_bytes: metadata.size });
   }
-  artifacts.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
-  if (artifacts.length !== 1 || !artifacts[0].path.endsWith('.tgz')) {
+  const normalized = await normalizeAndValidateManifestArtifacts(output, artifacts);
+  if (normalized.length !== 1 || !normalized[0].path.endsWith('.tgz')) {
     throw new TypeError('npm pack must produce exactly one tarball artifact');
   }
-  return artifacts;
+  return normalized;
 }
 
 async function writeManifestAtomically(output, artifacts) {

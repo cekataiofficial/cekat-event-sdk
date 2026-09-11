@@ -7,6 +7,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { findApprovedRangeDrift } from '../../scripts/check-approved-outdated.mjs';
+import { normalizeAndValidateManifestArtifacts } from '../../scripts/package';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const script = join(root, 'scripts/package');
@@ -107,6 +108,33 @@ test('creates deterministic, hashed no-publish artifacts', { timeout: 900_000 },
   } finally {
     rmSync(first, { recursive: true, force: true });
     rmSync(second, { recursive: true, force: true });
+  }
+});
+
+test('normalizes reverse-sorted manifest artifacts and rejects incorrect hashes', async (t) => {
+  const output = mkdtempSync(join(tmpdir(), 'cekat-manifest-artifacts-'));
+  try {
+    const alpha = join(output, 'alpha.tgz');
+    const zebra = join(output, 'zebra.tgz');
+    writeFileSync(alpha, 'alpha');
+    writeFileSync(zebra, 'zebra');
+    const reverseSortedArtifacts = [
+      { path: 'zebra.tgz', sha256: sha256(zebra), size_bytes: statSync(zebra).size },
+      { path: 'alpha.tgz', sha256: sha256(alpha), size_bytes: statSync(alpha).size },
+    ];
+
+    const normalized = await normalizeAndValidateManifestArtifacts(output, reverseSortedArtifacts);
+    assert.deepEqual(normalized.map(({ path }) => path), ['alpha.tgz', 'zebra.tgz']);
+
+    await assert.rejects(
+      normalizeAndValidateManifestArtifacts(output, [
+        { ...reverseSortedArtifacts[0], sha256: '0'.repeat(64) },
+        reverseSortedArtifacts[1],
+      ]),
+      /SHA-256 does not match artifact: zebra\.tgz/,
+    );
+  } finally {
+    rmSync(output, { recursive: true, force: true });
   }
 });
 
