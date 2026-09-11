@@ -102,6 +102,11 @@ export async function normalizeAndValidateManifestArtifacts(output, artifacts) {
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
       throw new TypeError(`manifest artifact is not a regular file: ${path}`);
     }
+    const canonicalArtifactPath = await realpath(artifactPath);
+    const canonicalRelativePath = relative(canonicalOutput, canonicalArtifactPath);
+    if (canonicalRelativePath.startsWith(`..${sep}`) || canonicalRelativePath === '..' || isAbsolute(canonicalRelativePath)) {
+      throw new TypeError(`unsafe artifact path: ${path}`);
+    }
     if (metadata.size !== sizeBytes) throw new TypeError(`size does not match artifact: ${path}`);
     if (await sha256File(artifactPath) !== sha256) throw new TypeError(`SHA-256 does not match artifact: ${path}`);
     normalized.push({ path, sha256, size_bytes: sizeBytes });

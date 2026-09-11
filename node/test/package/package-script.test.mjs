@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import test from 'node:test';
@@ -115,26 +115,58 @@ test('normalizes reverse-sorted manifest artifacts and rejects incorrect hashes'
   const output = mkdtempSync(join(tmpdir(), 'cekat-manifest-artifacts-'));
   try {
     const alpha = join(output, 'alpha.tgz');
-    const zebra = join(output, 'zebra.tgz');
+    const nested = join(output, 'nested');
+    const zebra = join(nested, 'zebra.tgz');
+    mkdirSync(nested);
     writeFileSync(alpha, 'alpha');
     writeFileSync(zebra, 'zebra');
     const reverseSortedArtifacts = [
-      { path: 'zebra.tgz', sha256: sha256(zebra), size_bytes: statSync(zebra).size },
+      { path: 'nested/zebra.tgz', sha256: sha256(zebra), size_bytes: statSync(zebra).size },
       { path: 'alpha.tgz', sha256: sha256(alpha), size_bytes: statSync(alpha).size },
     ];
 
     const normalized = await normalizeAndValidateManifestArtifacts(output, reverseSortedArtifacts);
-    assert.deepEqual(normalized.map(({ path }) => path), ['alpha.tgz', 'zebra.tgz']);
+    assert.deepEqual(normalized.map(({ path }) => path), ['alpha.tgz', 'nested/zebra.tgz']);
 
     await assert.rejects(
       normalizeAndValidateManifestArtifacts(output, [
         { ...reverseSortedArtifacts[0], sha256: '0'.repeat(64) },
         reverseSortedArtifacts[1],
       ]),
-      /SHA-256 does not match artifact: zebra\.tgz/,
+      /SHA-256 does not match artifact: nested\/zebra\.tgz/,
     );
   } finally {
     rmSync(output, { recursive: true, force: true });
+  }
+});
+
+test('rejects manifest artifacts reached through nested ancestor symlinks', async (t) => {
+  const output = mkdtempSync(join(tmpdir(), 'cekat-manifest-output-'));
+  const outside = mkdtempSync(join(tmpdir(), 'cekat-manifest-outside-'));
+  try {
+    const externalArtifact = join(outside, 'external.tgz');
+    writeFileSync(externalArtifact, 'external artifact');
+    try {
+      symlinkSync(outside, join(output, 'linked'));
+    } catch (error) {
+      if (error && typeof error === 'object' && ['EACCES', 'EPERM', 'ENOSYS', 'ENOTSUP'].includes(error.code)) {
+        t.skip(`symbolic link creation is unavailable: ${error.code}`);
+        return;
+      }
+      throw error;
+    }
+
+    await assert.rejects(
+      normalizeAndValidateManifestArtifacts(output, [{
+        path: 'linked/external.tgz',
+        sha256: sha256(externalArtifact),
+        size_bytes: statSync(externalArtifact).size,
+      }]),
+      /unsafe artifact path: linked\/external\.tgz/,
+    );
+  } finally {
+    rmSync(output, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 
