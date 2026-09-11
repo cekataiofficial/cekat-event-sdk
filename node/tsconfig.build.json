@@ -9,5 +9,5 @@
     "sourceMap": true
   },
   "include": ["src/node/**/*.ts", "src/integrations/**/*.ts", "node-package-boundary.d.ts"],
-  "exclude": ["test"]
+  "exclude": ["test", "src/browser/**/*.ts"]
 }
