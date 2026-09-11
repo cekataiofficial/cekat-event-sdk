@@ -60,11 +60,14 @@ describe('Client configuration', () => {
       'https://server.cekat.ai/events',
       'https://server.cekat.ai/?query=value',
       'https://server.cekat.ai/#fragment',
+      'https://:443',
     ]) {
       expect(validationError(() => new Client('token', { baseURL, fetch })).message).toContain('baseURL');
     }
     expect(validationError(() => new Client('token', { timeoutMs: 0, fetch })).message).toContain('timeoutMs');
     expect(validationError(() => new Client('token', { timeoutMs: Number.NaN, fetch })).message).toContain('timeoutMs');
+    expect(validationError(() => new Client('token', { timeoutMs: -1, fetch })).message).toContain('timeoutMs');
+    expect(validationError(() => new Client('token', { timeoutMs: Number.POSITIVE_INFINITY, fetch })).message).toContain('timeoutMs');
     expect(validationError(() => new Client('token', { retryCount: -1, fetch })).message).toContain('retryCount');
     expect(validationError(() => new Client('token', { retryCount: 1.5, fetch })).message).toContain('retryCount');
     expect(validationError(() => new Client('token', { fetch: 'not callable' as never })).message).toContain('fetch');
@@ -76,6 +79,30 @@ describe('Client configuration', () => {
 
     await client.orderPaid({ email: 'ada@example.test' });
     expect(fetch).toHaveBeenCalledWith('https://ingest.example/api/events/ingest', expect.anything());
+  });
+
+  it('uses a 10-second timeout and two retries by default', async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      }));
+      const client = new Client('token', { fetch });
+      const outcome = client.userLogin({ email: 'ada@example.test' });
+      const assertion = expect(outcome).rejects.toMatchObject({ name: 'TransportError', attempts: 3 });
+
+      expect(fetch).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(fetch).toHaveBeenCalledOnce();
+      await vi.runAllTimersAsync();
+
+      await assertion;
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 
