@@ -10,5 +10,5 @@
     "types": [],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/browser/**/*.ts", "test/browser/public-api.types.ts", "browser-package-boundary.d.ts"]
+  "include": ["src/browser/**/*.ts", "test/browser/**/*.ts", "browser-package-boundary.d.ts"]
 }

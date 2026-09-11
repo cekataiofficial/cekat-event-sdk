@@ -11,7 +11,7 @@ export function withVisitor(init: RequestInit = {}): RequestInit {
 
 /** Returns an immutable Request clone whose headers contain the current visitor when absent. */
 export function withVisitorRequest(request: Request): Request {
-  return new Request(request, withVisitor({
+  return new Request(request.clone(), withVisitor({
     headers: request.headers,
     method: request.method,
     credentials: request.credentials,

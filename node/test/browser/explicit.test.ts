@@ -68,6 +68,8 @@ describe('withVisitorRequest', () => {
     expect(enriched.headers.get('existing')).toBe('preserved');
     expect(enriched.headers.get('x-cekat-visitor-id')).toBe('visitor-2');
     expect(request.headers.has('x-cekat-visitor-id')).toBe(false);
+    expect(request.bodyUsed).toBe(false);
+    expect(Array.from(new Uint8Array(await request.arrayBuffer()))).toEqual([0, 1, 2, 255]);
     expect(Array.from(new Uint8Array(await enriched.arrayBuffer()))).toEqual([0, 1, 2, 255]);
 
     const reason = new Error('cancelled');
