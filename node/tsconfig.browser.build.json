@@ -1,5 +1,5 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.browser.json",
   "compilerOptions": {
     "noEmit": false,
     "outDir": "./dist",
@@ -8,6 +8,5 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/node/**/*.ts", "src/integrations/**/*.ts", "node-package-boundary.d.ts"],
-  "exclude": ["test"]
+  "include": ["src/browser/**/*.ts", "browser-package-boundary.d.ts"]
 }

@@ -42,13 +42,14 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json && node scripts/check-browser-boundary.mjs",
     "test": "vitest run",
     "test:browser": "playwright test",
     "test:conformance": "vitest run test/conformance/sdk.test.ts",
     "check:exports": "node scripts/check-exports.mjs",
-    "verify:compatibility": "node scripts/verify-compatibility.mjs"
+    "verify:compatibility": "node scripts/verify-compatibility.mjs",
+    "check:browser-boundary": "node scripts/check-browser-boundary.mjs"
   },
   "peerDependencies": {
     "@nestjs/common": "^12.0.0",

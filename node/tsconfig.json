@@ -8,7 +8,7 @@
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "types": ["node", "express", "koa"],
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022"]
   },
-  "include": ["vitest.config.ts", "playwright.config.ts", "src/node/**/*.ts", "src/integrations/**/*.ts", "src/browser/**/*.ts", "test/**/*.ts"]
+  "include": ["vitest.config.ts", "playwright.config.ts", "src/node/**/*.ts", "src/integrations/**/*.ts", "test/**/*.ts"]
 }
