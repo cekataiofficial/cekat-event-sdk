@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "success-malformed-data-success-false",
+  "description": "A 200 envelope with data.success false is malformed.",
+  "kind": "success",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"success\":false,\"message\":\"accepted\",\"event_key\":\"order_paid\",\"validated_properties\":[\"order_id\"]}}"
+    }
+  ],
+  "expect": {
+    "result": "response_decode_error",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "retained_body_bytes": 123,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}

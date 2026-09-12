@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "request-trims-visitor",
+  "description": "Visitor whitespace is trimmed before transmission.",
+  "kind": "request",
+  "inbound": {
+    "header_visitor_id": "  visitor-trimmed\t"
+  },
+  "operation": {
+    "name": "user_login",
+    "event": {
+      "email": "trim@example.com"
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "user_login",
+        "is_common": true,
+        "email": "trim@example.com",
+        "visitor_id": "visitor-trimmed"
+      }
+    }
+  }
+}

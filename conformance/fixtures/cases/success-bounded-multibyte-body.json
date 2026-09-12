@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "success-bounded-multibyte-body",
+  "description": "A malformed 200 retains exactly 65,536 bytes across a UTF-8 boundary.",
+  "kind": "success",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 200,
+      "body": ""
+    }
+  ],
+  "response_body_recipe": {
+    "unit": "\u20ac",
+    "minimum_utf8_bytes": 65537,
+    "suffix": "END"
+  },
+  "expect": {
+    "result": "response_decode_error",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "retained_body_bytes": 65536,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    },
+    "observed_body_bytes": 65537,
+    "body_truncated": true
+  }
+}

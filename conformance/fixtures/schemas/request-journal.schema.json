@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cekat.ai/event-sdk/conformance/request-journal.schema.json",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["sequence", "method", "path", "headers", "body"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "method": {"type": "string"},
+        "path": {"type": "string"},
+        "headers": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[a-z0-9!#$%&'*+.^_`|~-]+$"},
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "body": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": ["requests"],
+  "properties": {
+    "requests": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/request"}
+    }
+  },
+  "additionalProperties": false
+}

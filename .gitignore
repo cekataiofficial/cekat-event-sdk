@@ -1,0 +1,6 @@
+# Local implementation worktrees
+.worktrees/
+
+# Local Superpowers documentation and SDD artifacts
+.superpowers/sdd/
+docs/superpowers/

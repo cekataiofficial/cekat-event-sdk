@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "request-header-over-cookie",
+  "description": "A nonblank inbound visitor header takes precedence over the visitor cookie.",
+  "kind": "request",
+  "inbound": {
+    "header_visitor_id": "header-visitor",
+    "cookie_visitor_id": "cookie-visitor"
+  },
+  "operation": {
+    "name": "user_login",
+    "event": {
+      "email": "header@example.com"
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "user_login",
+        "is_common": true,
+        "email": "header@example.com",
+        "visitor_id": "header-visitor"
+      }
+    }
+  }
+}

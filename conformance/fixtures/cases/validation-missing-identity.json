@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "validation-missing-identity",
+  "description": "An event without a nonblank email or phone number fails locally before any request.",
+  "kind": "validation",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "  ",
+      "phone_number": "\t",
+      "contact_name": "Nobody"
+    }
+  },
+  "expect": {
+    "result": "validation_error",
+    "attempts": 0
+  }
+}

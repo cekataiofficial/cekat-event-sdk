@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "id": "retry-500-500-success",
+  "description": "Two retryable 500 responses are followed by success.",
+  "kind": "retry",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 500,
+      "body": "{\"success\":false,\"error\":\"defined server error\",\"code\":\"fixture_code\"}"
+    },
+    {
+      "status": 500,
+      "body": "{\"success\":false,\"error\":\"defined server error\",\"code\":\"fixture_code\"}"
+    },
+    {
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"success\":true,\"message\":\"accepted\",\"event_key\":\"order_paid\",\"validated_properties\":[\"order_id\"]}}"
+    }
+  ],
+  "client": {
+    "retry_count": 2
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 3,
+    "delivery_outcome_unknown": false,
+    "acknowledgement": {
+      "success": true,
+      "message": "accepted",
+      "event_key": "order_paid",
+      "validated_properties": [
+        "order_id"
+      ]
+    },
+    "jitter_bounds_ms": [
+      [
+        0,
+        100
+      ],
+      [
+        0,
+        200
+      ]
+    ],
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}

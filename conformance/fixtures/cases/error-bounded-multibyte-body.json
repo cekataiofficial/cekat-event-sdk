@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "error-bounded-multibyte-body",
+  "description": "A malformed non-200 body retains exactly 65,536 bytes across a UTF-8 boundary.",
+  "kind": "error",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 400,
+      "body": ""
+    }
+  ],
+  "response_body_recipe": {
+    "unit": "\u20ac",
+    "minimum_utf8_bytes": 65537,
+    "suffix": "END"
+  },
+  "expect": {
+    "result": "api_error",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "status": 400,
+    "error_message": "Bad Request",
+    "retained_body_bytes": 65536,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    },
+    "observed_body_bytes": 65537,
+    "body_truncated": true
+  }
+}

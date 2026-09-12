@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/node/**/*.ts", "src/integrations/**/*.ts", "node-package-boundary.d.ts"],
+  "exclude": ["test", "src/browser/**/*.ts"]
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cekat.ai/event-sdk/conformance/error-envelope.schema.json",
+  "type": "object",
+  "required": ["success", "error"],
+  "properties": {
+    "success": {"const": false},
+    "error": {"type": "string", "minLength": 1},
+    "code": {"type": "string"}
+  }
+}

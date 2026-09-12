@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "error-400-structured",
+  "description": "A structured HTTP 400 response has its typed error result.",
+  "kind": "error",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 400,
+      "body": "{\"success\":false,\"error\":\"defined server error\",\"code\":\"fixture_code\"}"
+    }
+  ],
+  "expect": {
+    "result": "api_error",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "status": 400,
+    "error_message": "defined server error",
+    "server_error": "defined server error",
+    "server_code": "fixture_code",
+    "retained_body_bytes": 70,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}

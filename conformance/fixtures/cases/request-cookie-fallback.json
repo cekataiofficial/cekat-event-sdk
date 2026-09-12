@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "request-cookie-fallback",
+  "description": "A blank inbound visitor header falls back to the nonblank visitor cookie.",
+  "kind": "request",
+  "inbound": {
+    "header_visitor_id": "   ",
+    "cookie_visitor_id": " cookie-visitor "
+  },
+  "operation": {
+    "name": "user_login",
+    "event": {
+      "email": "cookie@example.com"
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "user_login",
+        "is_common": true,
+        "email": "cookie@example.com",
+        "visitor_id": "cookie-visitor"
+      }
+    }
+  }
+}

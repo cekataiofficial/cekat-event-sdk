@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  echo "usage: scripts/package --version 0.1.0 --output <absolute-directory>" >&2
+  exit 2
+}
+
+[ "$#" -eq 4 ] || usage
+[ "$1" = "--version" ] || usage
+[ "$2" = "0.1.0" ] || usage
+[ "$3" = "--output" ] || usage
+case "$4" in
+  /*) ;;
+  *) echo "output must be an absolute directory" >&2; exit 2 ;;
+esac
+case "$4" in
+  */./*|*/../*|*/.|*/..) echo "output must not contain traversal components" >&2; exit 2 ;;
+esac
+[ -d "$4" ] && [ ! -L "$4" ] || { echo "output must be a non-symlink directory" >&2; exit 2; }
+[ -z "$(ls -A "$4")" ] || { echo "output directory must be empty" >&2; exit 2; }
+
+cd "$(dirname "$0")/.."
+go test ./...
+go vet ./...
+exec go run ./internal/packageprep --version "$2" --output "$4"

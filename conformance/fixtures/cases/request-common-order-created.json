@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "request-common-order-created",
+  "description": "The order created wrapper sends its fixed common event key.",
+  "kind": "request",
+  "operation": {
+    "name": "order_created",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-created"
+      }
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_created",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-created"
+        }
+      }
+    }
+  }
+}

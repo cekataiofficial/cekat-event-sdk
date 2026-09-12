@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "types": ["node", "express", "koa"],
+    "lib": ["ES2022"]
+  },
+  "include": ["vitest.config.ts", "playwright.config.ts", "src/node/**/*.ts", "src/integrations/**/*.ts", "test/node/**/*.ts", "test/integrations/**/*.ts"],
+  "exclude": ["src/browser/**/*.ts"]
+}

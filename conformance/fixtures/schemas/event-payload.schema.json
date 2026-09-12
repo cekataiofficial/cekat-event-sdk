@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cekat.ai/event-sdk/conformance/event-payload.schema.json",
+  "type": "object",
+  "required": ["event_key", "is_common"],
+  "anyOf": [
+    {"required": ["email"], "properties": {"email": {"minLength": 1}}},
+    {"required": ["phone_number"], "properties": {"phone_number": {"minLength": 1}}}
+  ],
+  "properties": {
+    "event_key": {"type": "string", "minLength": 1},
+    "contact_name": {"type": "string"},
+    "phone_number": {"type": "string"},
+    "email": {"type": "string"},
+    "visitor_id": {"type": "string"},
+    "is_common": {"type": "boolean"},
+    "properties": {
+      "type": "object",
+      "additionalProperties": {"$ref": "json-value.schema.json#/$defs/value"}
+    }
+  },
+  "additionalProperties": false
+}
