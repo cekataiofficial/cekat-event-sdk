@@ -1,0 +1,88 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Creates a verified local Composer archive and SHA-256 manifest. It runs checks and builds
+ * only; it never uploads, signs, tags, or pushes. Release owners handle distribution.
+ */
+
+const VERSION = '0.1.0';
+
+function usage(string $message): never
+{
+    fwrite(STDERR, $message . "\nusage: scripts/package --version " . VERSION . " --output <absolute-empty-directory>\n");
+    exit(2);
+}
+
+function run(string $command): void
+{
+    fwrite(STDERR, '> ' . $command . "\n");
+    passthru($command, $status);
+    if ($status !== 0) {
+        fwrite(STDERR, "command failed with exit status {$status}: {$command}\n");
+        exit(1);
+    }
+}
+
+$arguments = array_slice($argv, 1);
+if (count($arguments) !== 4 || $arguments[0] !== '--version' || $arguments[2] !== '--output') {
+    usage('expected exactly --version ' . VERSION . ' --output <absolute-empty-directory>');
+}
+if ($arguments[1] !== VERSION) {
+    usage('only version ' . VERSION . ' may be packaged');
+}
+$output = $arguments[3];
+if (!str_starts_with($output, '/')) {
+    usage('output must be an absolute directory');
+}
+$segments = explode('/', $output);
+if (in_array('..', $segments, true) || in_array('.', $segments, true)) {
+    usage('output must not contain traversal components');
+}
+if (is_link($output) || !is_dir($output)) {
+    usage('output must be an existing non-symlink directory');
+}
+if (array_diff((array) scandir($output), ['.', '..']) !== []) {
+    usage('output directory must be empty so stale artifacts cannot be packaged');
+}
+$root = dirname(__DIR__);
+$canonicalOutput = (string) realpath($output);
+if ($canonicalOutput === $root || str_starts_with($canonicalOutput, $root . '/')) {
+    usage('output must be outside the package working tree');
+}
+
+chdir($root);
+run('composer validate --strict');
+run('composer install --no-interaction --prefer-dist --no-progress');
+run('composer audit');
+run('vendor/bin/phpunit --testsuite unit');
+run('vendor/bin/phpstan analyse --memory-limit=1G --no-progress');
+run('vendor/bin/php-cs-fixer fix --dry-run --diff');
+
+$staging = sys_get_temp_dir() . '/cekat-php-package-' . bin2hex(random_bytes(8));
+mkdir($staging, 0o700);
+$archiveName = 'cekat-event-sdk-' . VERSION . '.zip';
+run('composer archive --format=zip --dir=' . escapeshellarg($staging) . ' --file=' . escapeshellarg('cekat-event-sdk-' . VERSION));
+if (!is_file($staging . '/' . $archiveName) || !rename($staging . '/' . $archiveName, $canonicalOutput . '/' . $archiveName)) {
+    fwrite(STDERR, "composer archive did not produce {$archiveName}\n");
+    exit(1);
+}
+rmdir($staging);
+
+$path = $canonicalOutput . '/' . $archiveName;
+$manifest = [
+    'schema_version' => 1,
+    'language' => 'php',
+    'version' => VERSION,
+    'artifacts' => [[
+        'path' => $archiveName,
+        'sha256' => hash_file('sha256', $path),
+        'size_bytes' => filesize($path),
+    ]],
+];
+$temporary = $canonicalOutput . '/.manifest-' . bin2hex(random_bytes(8)) . '.tmp';
+file_put_contents($temporary, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+rename($temporary, $canonicalOutput . '/manifest.json');
+fwrite(STDOUT, 'Prepared local ' . VERSION . " PHP package artifacts in {$canonicalOutput}\n");

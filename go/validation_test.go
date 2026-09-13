@@ -81,7 +81,9 @@ func TestBuildPayloadRejectsNonPortableProperties(t *testing.T) {
 		{name: "function", properties: map[string]any{"secret": func() {}}, wantText: "properties"},
 		{name: "channel", properties: map[string]any{"secret": make(chan int)}, wantText: "properties"},
 		{name: "complex", properties: map[string]any{"secret": complex(1, 2)}, wantText: "properties"},
-		{name: "unencodable map key", properties: map[string]any{"order": map[float64]any{1: "very-secret"}}, wantText: "properties"},
+		// Struct keys cannot become JSON object names in any Go release. (Go 1.27 started
+		// encoding float, interface, and pointer keys, so those are not stable examples.)
+		{name: "unencodable map key", properties: map[string]any{"order": map[struct{ ID int }]any{{ID: 1}: "very-secret"}}, wantText: "properties"},
 		{name: "map cycle", properties: mapCycle, wantText: "cycle"},
 		{name: "slice cycle", properties: map[string]any{"items": sliceCycle}, wantText: "cycle"},
 	} {
