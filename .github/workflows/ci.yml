@@ -135,6 +135,99 @@ jobs:
         working-directory: .
         run: scripts/conformance.sh --language node
 
+  python:
+    name: Python ${{ matrix.python-version }} (${{ matrix.dependencies }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: '3.10'
+            dependencies: lowest
+          # Also runs Ruff, mypy, pip-audit, build, and twine check through scripts/package.
+          - python-version: '3.14'
+            dependencies: highest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - *build-mock-setup
+      - *build-mock
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+      - name: Install package and test dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          if [ "${{ matrix.dependencies }}" = lowest ]; then
+            .venv/bin/python -m pip install -c constraints-lowest.txt -e ".[test,django,flask,asgi,fastapi]"
+          else
+            .venv/bin/python -m pip install -e ".[test,django,flask,asgi,fastapi]"
+          fi
+          .venv/bin/python -m pip list
+      - name: Unit, integration, and packaging tests
+        if: matrix.dependencies == 'lowest'
+        run: .venv/bin/python -m pytest
+      - name: Tests, static analysis, security audit, and package build
+        if: matrix.dependencies == 'highest'
+        run: .venv/bin/python scripts/package --version 0.1.0 --output "$RUNNER_TEMP/python-package"
+      - name: Shared conformance
+        working-directory: .
+        run: scripts/conformance.sh --language python
+
+  dotnet:
+    name: .NET ${{ matrix.sdk }} (${{ matrix.test-framework }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: '8.0'
+            test-framework: net8.0
+          # Also runs the vulnerability audit and packs the NuGet packages through scripts/package.
+          - sdk: '10.0'
+            test-framework: net10.0
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      TEST_TARGET_FRAMEWORK: ${{ matrix.test-framework }}
+    defaults:
+      run:
+        working-directory: dotnet
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - *build-mock-setup
+      - *build-mock
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ matrix.sdk }}.x
+      - name: Select the ${{ matrix.sdk }} SDK
+        # The runner image may preinstall newer SDKs, which dotnet would otherwise prefer.
+        run: |
+          version="$(dotnet --list-sdks | awk '/^${{ matrix.sdk }}\./ {v=$1} END {print v}')"
+          jq --arg version "$version" '.sdk = {version: $version, rollForward: "latestPatch"}' global.json > global.json.tmp
+          mv global.json.tmp global.json
+          dotnet --version
+      - name: Build and test
+        if: matrix.sdk == '8.0'
+        run: dotnet test Cekat.EventSdk.sln --configuration Release -p:TestTargetFramework=${{ matrix.test-framework }}
+      - name: Build, test, audit, and pack
+        if: matrix.sdk == '10.0'
+        run: scripts/package --version 0.1.0 --output "$RUNNER_TEMP/dotnet-package"
+      - name: Shared conformance
+        working-directory: .
+        run: scripts/conformance.sh --language dotnet
+
   php:
     name: PHP ${{ matrix.php-version }} (${{ matrix.dependencies }})
     runs-on: ubuntu-24.04
@@ -286,7 +379,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [contract, go, node, php, ruby, java]
+    needs: [contract, go, node, python, php, ruby, java, dotnet]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every job to succeed

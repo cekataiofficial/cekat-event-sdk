@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>Cekat.EventSdk</PackageId>
+    <Description>Submit identity-bearing Cekat events from .NET backends with browser visitor correlation.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cekat.EventSdk.AspNetCore" />
+    <InternalsVisibleTo Include="Cekat.EventSdk.AzureFunctions" />
+  </ItemGroup>
+</Project>

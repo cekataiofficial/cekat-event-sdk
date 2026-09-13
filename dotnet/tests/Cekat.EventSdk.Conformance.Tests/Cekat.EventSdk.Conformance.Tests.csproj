@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Needs the mock server, so it is not in Cekat.EventSdk.sln: run it through scripts/conformance. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="JsonSchema.Net" />
+    <ProjectReference Include="..\..\src\Cekat.EventSdk\Cekat.EventSdk.csproj" />
+  </ItemGroup>
+</Project>

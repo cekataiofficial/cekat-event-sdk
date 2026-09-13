@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Build verified local wheel and sdist artifacts plus a SHA-256 manifest.
+
+It runs checks and builds only; it never uploads, signs, tags, or pushes. Release owners handle
+distribution. Run it with the interpreter that has the ``test`` extra installed, for example
+``.venv/bin/python scripts/package --version 0.1.0 --output /absolute/empty/dir``.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+VERSION = "0.1.0"
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def usage(message: str) -> None:
+    sys.stderr.write(
+        f"{message}\nusage: scripts/package --version {VERSION} --output <absolute-empty-directory>\n"
+    )
+    raise SystemExit(2)
+
+
+def run(*command: str) -> None:
+    sys.stderr.write(f"> {' '.join(command)}\n")
+    if subprocess.run(command, cwd=ROOT, check=False).returncode != 0:  # noqa: S603
+        sys.stderr.write(f"command failed: {' '.join(command)}\n")
+        raise SystemExit(1)
+
+
+def output_directory(arguments: list[str]) -> Path:
+    if len(arguments) != 4 or arguments[0] != "--version" or arguments[2] != "--output":
+        usage(f"expected exactly --version {VERSION} --output <absolute-empty-directory>")
+    if arguments[1] != VERSION:
+        usage(f"only version {VERSION} may be packaged")
+    output = arguments[3]
+    if not output.startswith("/"):
+        usage("output must be an absolute directory")
+    if {".", ".."} & set(output.split("/")):
+        usage("output must not contain traversal components")
+    path = Path(output)
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        usage("output must be a non-symlink directory")
+    if path.exists() and any(path.iterdir()):
+        usage("output directory must be empty so stale artifacts cannot be packaged")
+    resolved = path.resolve()
+    if resolved == ROOT or ROOT in resolved.parents:
+        usage("output must be outside the package working tree")
+    return path
+
+
+def verify_wheel(wheel: Path) -> None:
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+    required = {
+        "cekat_event_sdk/__init__.py",
+        "cekat_event_sdk/py.typed",
+        "cekat_event_sdk/integrations/asgi.py",
+    }
+    missing = required - names
+    if missing or any(name.startswith("tests/") for name in names):
+        sys.stderr.write(f"wheel contents are invalid (missing {sorted(missing)})\n")
+        raise SystemExit(1)
+
+
+def main() -> None:
+    output = output_directory(sys.argv[1:])
+    python = sys.executable
+    run(python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/unit", "tests/integrations")
+    run(python, "-m", "ruff", "check", "src", "tests", "scripts/package", "scripts/verify-compatibility")
+    run(python, "-m", "ruff", "format", "--check", "src", "tests")
+    run(python, "-m", "mypy")
+    run(python, "-m", "pip_audit", "--skip-editable", "--progress-spinner", "off")
+
+    with tempfile.TemporaryDirectory(prefix="cekat-python-package-") as staging:
+        run(python, "-m", "build", "--sdist", "--wheel", "--outdir", staging, str(ROOT))
+        artifacts = sorted(Path(staging).iterdir())
+        expected = {f"cekat_event_sdk-{VERSION}-py3-none-any.whl", f"cekat_event_sdk-{VERSION}.tar.gz"}
+        if {artifact.name for artifact in artifacts} != expected:
+            sys.stderr.write(f"unexpected build artifacts: {[artifact.name for artifact in artifacts]}\n")
+            raise SystemExit(1)
+        run(python, "-m", "twine", "check", "--strict", *map(str, artifacts))
+        verify_wheel(Path(staging) / f"cekat_event_sdk-{VERSION}-py3-none-any.whl")
+        output.mkdir(parents=True, exist_ok=True)
+        for artifact in artifacts:
+            shutil.move(str(artifact), output / artifact.name)
+
+    entries = []
+    for path in sorted(output.iterdir()):
+        body = path.read_bytes()
+        entries.append(
+            {"path": path.name, "sha256": hashlib.sha256(body).hexdigest(), "size_bytes": len(body)}
+        )
+    manifest = {"schema_version": 1, "language": "python", "version": VERSION, "artifacts": entries}
+    temporary = output / f".manifest-{os.getpid()}.tmp"
+    temporary.write_text(json.dumps(manifest, indent=2) + "\n")
+    os.replace(temporary, output / "manifest.json")
+    print(f"Prepared local {VERSION} Python package artifacts in {output.resolve()}")
+
+
+if __name__ == "__main__":
+    main()
