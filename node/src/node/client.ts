@@ -6,7 +6,7 @@ import { currentVisitorId } from './visitor-context.js';
 
 const DEFAULT_ORIGIN = 'https://server.cekat.ai';
 const INGEST_PATH = '/api/events/ingest';
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 3_000;
 const DEFAULT_RETRY_COUNT = 2;
 
 interface NormalizedOptions {
@@ -53,7 +53,9 @@ export class Client {
     return this.track(eventKey, false, event, options);
   }
 
-  private track(eventKey: string, isCommon: boolean, event: EventInput, options: CallOptions | undefined): Promise<Acknowledgement> {
+  // Async so validation failures reject the returned promise instead of throwing
+  // synchronously; the visitor scope is still read before the first await.
+  private async track(eventKey: string, isCommon: boolean, event: EventInput, options: CallOptions | undefined): Promise<Acknowledgement> {
     const payload = buildPayload(eventKey, isCommon, event, currentVisitorId());
     const configured = clientOptions.get(this);
     if (configured === undefined) throw new Error('client delivery configuration is unavailable');

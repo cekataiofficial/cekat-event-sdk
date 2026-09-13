@@ -53,7 +53,6 @@ function fixtures() {
       express: metadata(['5.0.0', '5.1.0'], engines(['5.0.0', '5.1.0'])),
       '@types/express': metadata(['5.0.0', '5.0.1'], engines(['5.0.0', '5.0.1'])),
       fastify: metadata(['5.0.0', '5.1.0'], engines(['5.0.0', '5.1.0'])),
-      'fastify-plugin': metadata(['6.0.0'], engines(['6.0.0'])),
       koa: metadata(['3.0.0', '3.1.0'], engines(['3.0.0', '3.1.0'])),
       '@types/koa': metadata(['3.0.0', '3.0.1'], engines(['3.0.0', '3.0.1'])),
       '@nestjs/common': metadata(nestVersions, engines(nestVersions)),
@@ -136,6 +135,10 @@ test('renders evidence that limits Next.js conclusions to Node engine compatibil
   assert.match(markdown, /Next\.js \(Node engine compatibility\)/);
   assert.doesNotMatch(markdown, /restricted to its Node runtime/i);
   assert.match(markdown, /does not establish a Next\.js runtime boundary/i);
+  assert.doesNotMatch(markdown, /Declared optional peer ranges/);
+
+  const withPeers = renderCompatibilityMarkdown(evaluateCompatibility(fixtures(), { now: retrievedAt, sources, packageNodeRange: '>=22.12.0 <28.0.0' }), { koa: '^2.13.0 || ^3.0.0', express: '^4.17.0 || ^5.0.0' });
+  assert.match(withPeers, /## Declared optional peer ranges[\s\S]*\| express \| \^4\.17\.0 \\\|\\\| \^5\.0\.0 \|\n\| koa \| \^2\.13\.0 \\\|\\\| \^3\.0\.0 \|/);
 });
 
 test('collects official sources and propagates thrown or malformed npm metadata through the CLI', async () => {
@@ -163,6 +166,7 @@ test('collects official sources and propagates thrown or malformed npm metadata 
   });
   assert.equal(writes.length, 1);
   assert.match(writes[0].content, /@nestjs\/core/);
+  assert.match(writes[0].content, /\| express \| \^4\.17\.0 \\\|\\\| \^5\.0\.0 \|/);
   assert.deepEqual(stdout, ['12.1.0\n']);
 
   await assert.rejects(

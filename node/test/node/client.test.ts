@@ -22,6 +22,17 @@ function successfulFetch(): FetchLike {
   });
 }
 
+function payloads(fetch: FetchLike): Record<string, unknown>[] {
+  return (fetch as ReturnType<typeof vi.fn>).mock.calls.map(([, init]) => {
+    const payload = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(payload.event_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(payload.occurred_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    delete payload.event_id;
+    delete payload.occurred_at;
+    return payload;
+  });
+}
+
 function validationError(callback: () => unknown): ValidationError {
   try {
     callback();
@@ -81,7 +92,7 @@ describe('Client configuration', () => {
     expect(fetch).toHaveBeenCalledWith('https://ingest.example/api/events/ingest', expect.anything());
   });
 
-  it('uses a 10-second timeout and two retries by default', async () => {
+  it('uses a 3-second timeout and two retries by default', async () => {
     vi.useFakeTimers();
     const random = vi.spyOn(Math, 'random').mockReturnValue(0);
     try {
@@ -102,24 +113,24 @@ describe('Client configuration', () => {
       const firstAttemptStartedAt = attemptStartedAt[0];
       expect(firstAttemptStartedAt).toBeDefined();
       if (firstAttemptStartedAt === undefined) throw new Error('Expected first attempt start time');
-      await vi.advanceTimersByTimeAsync(9_999);
+      await vi.advanceTimersByTimeAsync(2_999);
       expect(fetch).toHaveBeenCalledOnce();
       expect(attemptAbortedAt).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(1);
-      expect(attemptAbortedAt).toEqual([firstAttemptStartedAt + 10_000]);
+      expect(attemptAbortedAt).toEqual([firstAttemptStartedAt + 3_000]);
       await vi.advanceTimersByTimeAsync(1);
       expect(fetch).toHaveBeenCalledTimes(2);
       const secondAttemptStartedAt = attemptStartedAt[1];
       expect(secondAttemptStartedAt).toBeDefined();
       if (secondAttemptStartedAt === undefined) throw new Error('Expected second attempt start time');
 
-      await vi.advanceTimersByTimeAsync(9_999);
+      await vi.advanceTimersByTimeAsync(2_999);
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(attemptAbortedAt).toHaveLength(1);
       await vi.advanceTimersByTimeAsync(1);
       expect(attemptAbortedAt).toEqual([
-        firstAttemptStartedAt + 10_000,
-        secondAttemptStartedAt + 10_000,
+        firstAttemptStartedAt + 3_000,
+        secondAttemptStartedAt + 3_000,
       ]);
       await vi.advanceTimersByTimeAsync(1);
       expect(fetch).toHaveBeenCalledTimes(3);
@@ -127,12 +138,12 @@ describe('Client configuration', () => {
       expect(thirdAttemptStartedAt).toBeDefined();
       if (thirdAttemptStartedAt === undefined) throw new Error('Expected third attempt start time');
 
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(3_000);
       await assertion;
       expect(attemptAbortedAt).toEqual([
-        firstAttemptStartedAt + 10_000,
-        secondAttemptStartedAt + 10_000,
-        thirdAttemptStartedAt + 10_000,
+        firstAttemptStartedAt + 3_000,
+        secondAttemptStartedAt + 3_000,
+        thirdAttemptStartedAt + 3_000,
       ]);
     } finally {
       random.mockRestore();
@@ -162,7 +173,7 @@ describe('Client event facade', () => {
       expect.objectContaining({ success: true, eventKey: 'order_paid' }),
       expect.objectContaining({ success: true, eventKey: 'trial_started' }),
     ]);
-    expect((fetch as ReturnType<typeof vi.fn>).mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string))).toEqual([
+    expect(payloads(fetch)).toEqual([
       { event_key: 'user_registration', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
       { event_key: 'user_login', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
       { event_key: 'order_created', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
@@ -187,8 +198,7 @@ describe('Client event facade', () => {
       visitorId: ' \t ',
     }));
 
-    const payloads = (fetch as ReturnType<typeof vi.fn>).mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
-    expect(payloads).toEqual([
+    expect(payloads(fetch)).toEqual([
       {
         event_key: 'trial_started',
         is_common: false,
@@ -199,5 +209,29 @@ describe('Client event facade', () => {
       { event_key: 'outside_scope', is_common: false, email: 'ada@example.test' },
       { event_key: 'ambient_event', is_common: false, email: 'ada@example.test', visitor_id: 'ambient-visitor' },
     ]);
+  });
+
+  it('rejects the returned promise for invalid events instead of throwing synchronously', async () => {
+    const fetch = successfulFetch();
+    const client = new Client('token', { fetch });
+    let outcome: Promise<unknown> | undefined;
+    expect(() => { outcome = client.userLogin({}); }).not.toThrow();
+    await expect(outcome).rejects.toBeInstanceOf(ValidationError);
+    await expect(client.customEvent(undefined as never, { email: 'ada@example.test' })).rejects.toBeInstanceOf(ValidationError);
+    await expect(client.userLogin(undefined as never)).rejects.toBeInstanceOf(ValidationError);
+    await expect(client.userLogin({ email: 42 as never })).rejects.toBeInstanceOf(ValidationError);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('sends caller event IDs and timestamps unchanged across retries', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+      .mockImplementationOnce(successfulFetch());
+    const client = new Client('token', { fetch, retryCount: 1 });
+    await client.orderPaid({ email: 'ada@example.test', eventId: ' order-1 ', occurredAt: new Date('2026-09-13T08:15:30.250+07:00') });
+    const bodies = fetch.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+    expect(bodies[0]).toMatchObject({ event_id: 'order-1', occurred_at: '2026-09-13T01:15:30.250Z' });
+    expect(bodies[1]).toEqual(bodies[0]);
+    await expect(client.orderPaid({ email: 'ada@example.test', occurredAt: new Date(Number.NaN) })).rejects.toThrow('occurredAt');
   });
 });

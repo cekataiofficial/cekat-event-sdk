@@ -8,7 +8,11 @@ import {
   TransportError,
   ValidationError,
 } from '../../src/node/errors.js';
-import { buildPayload, validateAccessToken } from '../../src/node/validation.js';
+import { buildPayload as buildPayloadWithClock, validateAccessToken } from '../../src/node/validation.js';
+
+const fixedClock = { now: () => new Date('2026-09-13T01:15:30.250Z'), newEventId: () => 'generated-event-id' };
+const buildPayload = (...args: [Parameters<typeof buildPayloadWithClock>[0], Parameters<typeof buildPayloadWithClock>[1], Parameters<typeof buildPayloadWithClock>[2], Parameters<typeof buildPayloadWithClock>[3]?]) =>
+  buildPayloadWithClock(args[0], args[1], args[2], args[3], fixedClock);
 
 describe('strict local validation', () => {
   it('rejects blank access tokens without disclosing them', () => {
@@ -42,6 +46,8 @@ describe('strict local validation', () => {
 
     expect(payload).toEqual({
       event_key: ' custom_event ',
+      event_id: 'generated-event-id',
+      occurred_at: '2026-09-13T01:15:30.250Z',
       is_common: false,
       email: ' ada@example.test ',
       phone_number: ' +628123 ',
@@ -66,9 +72,25 @@ describe('strict local validation', () => {
   ])('shapes %s payload exactly', (_name, eventKey, isCommon) => {
     expect(buildPayload(eventKey, isCommon, { email: 'person@example.test' })).toEqual({
       event_key: eventKey,
+      event_id: 'generated-event-id',
+      occurred_at: '2026-09-13T01:15:30.250Z',
       is_common: isCommon,
       email: 'person@example.test',
     });
+  });
+
+  it('trims caller event IDs, serializes caller timestamps as UTC milliseconds, and generates both otherwise', () => {
+    expect(buildPayload('order_paid', true, {
+      email: 'person@example.test',
+      eventId: ' order-1 ',
+      occurredAt: new Date('2026-09-13T08:15:30.250+07:00'),
+    })).toMatchObject({ event_id: 'order-1', occurred_at: '2026-09-13T01:15:30.250Z' });
+    expect(buildPayload('order_paid', true, { email: 'person@example.test', eventId: ' \t ' })).toMatchObject({ event_id: 'generated-event-id' });
+    const generated = buildPayloadWithClock('order_paid', true, { email: 'person@example.test' });
+    expect(generated.event_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    for (const occurredAt of [new Date(Number.NaN), new Date('+010000-01-01T00:00:00Z'), '2026-09-13' as never]) {
+      expect(expectValidationError(() => buildPayload('order_paid', true, { email: 'person@example.test', occurredAt })).message).toContain('occurredAt');
+    }
   });
 
   it('accepts finite safe numbers and nested arrays/plain objects without mutating them', () => {

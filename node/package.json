@@ -1,7 +1,6 @@
 {
   "name": "@cekat/event-sdk",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -14,40 +13,44 @@
     "multer": "2.3.0"
   },
   "engines": {
-    "node": ">=22.0.0 <28.0.0"
+    "node": ">=22.12.0 <28.0.0"
   },
   "exports": {
+    ".": {
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
+    },
     "./node": {
       "types": "./dist/node/index.d.ts",
-      "import": "./dist/node/index.js"
+      "default": "./dist/node/index.js"
     },
     "./express": {
       "types": "./dist/integrations/express.d.ts",
-      "import": "./dist/integrations/express.js"
+      "default": "./dist/integrations/express.js"
     },
     "./fastify": {
       "types": "./dist/integrations/fastify.d.ts",
-      "import": "./dist/integrations/fastify.js"
+      "default": "./dist/integrations/fastify.js"
     },
     "./koa": {
       "types": "./dist/integrations/koa.d.ts",
-      "import": "./dist/integrations/koa.js"
+      "default": "./dist/integrations/koa.js"
     },
     "./nestjs": {
       "types": "./dist/integrations/nestjs.d.ts",
-      "import": "./dist/integrations/nestjs.js"
+      "default": "./dist/integrations/nestjs.js"
     },
     "./nextjs": {
       "types": "./dist/integrations/nextjs.d.ts",
-      "import": "./dist/integrations/nextjs.js"
+      "default": "./dist/integrations/nextjs.js"
     },
     "./browser": {
       "types": "./dist/browser/index.d.ts",
-      "import": "./dist/browser/index.js"
+      "default": "./dist/browser/index.js"
     },
     "./browser/axios": {
       "types": "./dist/browser/axios.d.ts",
-      "import": "./dist/browser/axios.js"
+      "default": "./dist/browser/axios.js"
     }
   },
   "scripts": {
@@ -62,16 +65,15 @@
     "check:browser-boundary": "node scripts/check-browser-boundary.mjs"
   },
   "peerDependencies": {
-    "@nestjs/common": "^12.0.0",
-    "@nestjs/core": "^12.0.0",
-    "@nestjs/platform-express": "^12.0.0",
-    "@nestjs/platform-fastify": "^12.0.0",
+    "@nestjs/common": "^10.0.0 || ^11.0.0 || ^12.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0 || ^12.0.0",
+    "@nestjs/platform-express": "^10.0.0 || ^11.0.0 || ^12.0.0",
+    "@nestjs/platform-fastify": "^10.0.0 || ^11.0.0 || ^12.0.0",
     "axios": "^1.0.0",
-    "express": "^5.0.0",
-    "fastify": "^5.0.0",
-    "fastify-plugin": "^6.0.0",
-    "koa": "^3.0.0",
-    "next": "^16.0.0"
+    "express": "^4.17.0 || ^5.0.0",
+    "fastify": "^4.0.0 || ^5.0.0",
+    "koa": "^2.13.0 || ^3.0.0",
+    "next": "^14.0.0 || ^15.0.0 || ^16.0.0"
   },
   "peerDependenciesMeta": {
     "@nestjs/common": {
@@ -95,9 +97,6 @@
     "fastify": {
       "optional": true
     },
-    "fastify-plugin": {
-      "optional": true
-    },
     "koa": {
       "optional": true
     },
@@ -119,7 +118,6 @@
     "axios": "1.20.0",
     "express": "5.2.1",
     "fastify": "5.12.4",
-    "fastify-plugin": "6.0.0",
     "jsdom": "26.1.0",
     "koa": "3.2.1",
     "next": "16.3.4",

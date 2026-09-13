@@ -8,14 +8,24 @@ The Node.js SDK sends Cekat events through a backend-only access token. Browser 
 npm install @cekat/event-sdk
 ```
 
+Requires Node.js 22.12 or newer. The package is ESM and also loads from CommonJS through `require()` (for example in default NestJS projects). The Node client is exported from both `@cekat/event-sdk` and `@cekat/event-sdk/node`.
+
+| Framework adapter | Supported majors |
+| --- | --- |
+| Express | 4.17+, 5 |
+| Fastify | 4, 5 |
+| Koa | 2.13+, 3 |
+| NestJS (Express or Fastify platform) | 10, 11, 12 |
+| Next.js (Node runtime) | 14, 15, 16 |
+
 ```ts
-import { Client } from '@cekat/event-sdk/node';
+import { Client } from '@cekat/event-sdk';
 
 // Keep the token in server-side configuration; never ship it to a browser.
 const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
 ```
 
-`Client` accepts a token only plus optional `{ baseURL, timeoutMs, retryCount, fetch }` options. `baseURL` must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The default is `https://server.cekat.ai`; each operation posts only to `/api/events/ingest`. The default timeout is 10 seconds per attempt and the default retry count is two after the initial request. Transport failures, SDK timeouts, and exactly HTTP 500 may retry with jitter; retries can create duplicate accepted events. Pass `{ signal }` to any event call to cancel without retrying.
+`Client` accepts a token only plus optional `{ baseURL, timeoutMs, retryCount, fetch }` options. `baseURL` must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The default is `https://server.cekat.ai`; each operation posts only to `/api/events/ingest` and identifies itself with `User-Agent: cekat-event-sdk-node/<version>`. The default timeout is 3 seconds per attempt and the default retry count is two after the initial request. Pass `{ signal }` to any event call to cancel without retrying.
 
 ```ts
 await cekat.userRegistration({ email: 'person@example.test' });
@@ -25,7 +35,23 @@ await cekat.orderPaid({ email: 'person@example.test', properties: { total: 42 } 
 await cekat.customEvent('wishlist_updated', { email: 'person@example.test', contactName: 'Ada' });
 ```
 
-A nonblank explicit `visitorId` takes precedence over request context; a blank explicit value falls back to context. Email and phone are retained as submitted but at least one must be nonblank. Event properties are JSON values only (finite safe numbers, arrays, and plain objects).
+A nonblank explicit `visitorId` takes precedence over request context; a blank explicit value falls back to context. Email and phone are retained as submitted but at least one must be nonblank. Event properties are JSON values only (finite safe numbers, arrays, and plain objects); convert values such as `Date` to strings first.
+
+Every event carries an `event_id` and an `occurred_at` timestamp. When `eventId` is blank the SDK generates a random UUID, and when `occurredAt` (a `Date`) is omitted it uses the time of the call. Both are fixed before the first attempt and reused by every retry, so Cekat can recognize retried deliveries. Supply your own `eventId` (for example an order or webhook ID) when the same business event may be sent more than once:
+
+```ts
+await cekat.orderPaid({ email: order.email, eventId: `order-paid-${order.id}`, occurredAt: order.paidAt });
+```
+
+## Keep tracking off the request's critical path
+
+Event methods always return a promise; invalid input rejects it rather than throwing synchronously. To avoid adding tracking latency to a user-facing request, you can skip `await` — but **always attach a `.catch`**. An unhandled rejection terminates the Node.js process by default, so a Cekat outage must never reach it:
+
+```ts
+cekat.userLogin({ email: user.email }).catch((error) => logger.warn({ error }, 'cekat user_login failed'));
+```
+
+The call reads the request's visitor scope synchronously, so this works inside adapters.
 
 A successful `Acknowledgement` means the ingest service accepted the event for **asynchronous processing**. It is not a promise of idempotency, durable persistence, identity resolution, delivery state, or special common-event behavior.
 
@@ -75,7 +101,9 @@ For App Router handlers use `runWithCekatVisitor(request, () => handler())` in t
 
 ## Errors and delivery outcome
 
-Invalid local input throws `ValidationError` before network I/O. Received responses have known delivery outcome and throw `AuthenticationError` (401), `EventDefinitionNotFoundError` (404), `ApiError` (other non-200), or `ResponseDecodeError` (malformed/truncated 200). `TransportError` means outcome is unknown after transport failure or SDK timeout. HTTP bodies retained in errors are bounded to 65,536 bytes. Do not blindly resend after an unknown outcome unless your application accepts the duplicate risk.
+Invalid local input rejects with `ValidationError` before network I/O. Received responses have known delivery outcome and reject with `AuthenticationError` (401), `EventDefinitionNotFoundError` (404), `ApiError` (other non-200), or `ResponseDecodeError` (malformed, truncated, or unreadable 200). `TransportError` means outcome is unknown after transport failure or SDK timeout. HTTP bodies retained in errors are bounded to 65,536 bytes.
+
+Transport failures, SDK timeouts, and HTTP 429, 500, 502, 503, and 504 are retried with capped exponential full jitter (up to 100ms, 200ms, 400ms, 800ms, then 1s). Other statuses, including 400, 401, and 404, are not retried. A valid `Retry-After` header raises the delay to the server's value; if the server asks for more than 5 seconds, the call rejects immediately instead of blocking. A received 200 is never retried, even if its body cannot be read, because the event was already accepted. Retries after an unknown outcome can create duplicate events; they reuse the same `event_id`, but the SDK does not guarantee server-side deduplication.
 
 ## Browser visitor propagation
 

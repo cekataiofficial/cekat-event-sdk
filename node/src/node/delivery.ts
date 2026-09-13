@@ -7,6 +7,7 @@ import {
   TransportError,
 } from './errors.js';
 import type { Acknowledgement, CallOptions, FetchLike, WirePayload } from './types.js';
+import { SDK_VERSION } from './version.js';
 
 export interface DeliveryConfig {
   url: string;
@@ -23,7 +24,15 @@ export interface DeliveryDependencies {
   observeBody?: (body: BoundedBody) => void;
 }
 
-const RETRY_RESPONSE = Symbol('retry response');
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAXIMUM_RETRY_AFTER_MS = 5_000;
+const USER_AGENT = `cekat-event-sdk-node/${SDK_VERSION} node/${process.versions.node}`;
+
+/** A retryable response that should be retried after at least `retryAfterMs`. */
+interface RetryResponse {
+  readonly retry: true;
+  readonly retryAfterMs: number | undefined;
+}
 
 export async function deliver(
   config: DeliveryConfig,
@@ -31,18 +40,26 @@ export async function deliver(
   options: CallOptions,
   dependencies: DeliveryDependencies,
 ): Promise<Acknowledgement> {
+  // Serialize once so every retry carries the same event ID and timestamp.
+  const body = JSON.stringify(payload);
   const maximumAttempts = config.retryCount + 1;
   for (let attempts = 1; attempts <= maximumAttempts; attempts += 1) {
     throwIfAborted(options.signal);
+    let retryAfterMs: number | undefined;
     try {
-      const result = await attempt(config, payload, options.signal, dependencies.fetch, async (response, signal) => {
-        if (response.status === 500 && attempts !== maximumAttempts) {
-          await cancelBody(response);
-          return RETRY_RESPONSE;
+      const result = await attempt(config, body, options.signal, dependencies.fetch, async (response, signal) => {
+        if (RETRYABLE_STATUSES.has(response.status) && attempts !== maximumAttempts) {
+          const requested = parseRetryAfterMs(response.headers.get('retry-after'), Date.now());
+          if (requested === undefined || requested <= MAXIMUM_RETRY_AFTER_MS) {
+            await cancelBody(response);
+            return { retry: true, retryAfterMs: requested } satisfies RetryResponse;
+          }
+          // The server asked for a longer pause than a caller should wait: report it now.
         }
         return classifyResponse(response, attempts, signal, dependencies.observeBody);
       });
-      if (result !== RETRY_RESPONSE) return result;
+      if (!isRetryResponse(result)) return result;
+      retryAfterMs = result.retryAfterMs;
     } catch (error) {
       throwIfAborted(options.signal);
       if (isKnownOutcomeError(error)) throw error;
@@ -50,14 +67,18 @@ export async function deliver(
         throw new TransportError('event delivery failed after transport failures', attempts, redactTransportCause(error, config.accessToken));
       }
     }
-    await backoff(attempts, options.signal, dependencies);
+    await backoff(attempts, retryAfterMs, options.signal, dependencies);
   }
   throw new Error('unreachable');
 }
 
+function isRetryResponse(value: Acknowledgement | RetryResponse): value is RetryResponse {
+  return 'retry' in value;
+}
+
 async function attempt<T>(
   config: DeliveryConfig,
-  payload: WirePayload,
+  body: string,
   callerSignal: AbortSignal | undefined,
   fetch: FetchLike,
   consumeResponse: (response: Response, signal: AbortSignal) => Promise<T>,
@@ -74,8 +95,9 @@ async function attempt<T>(
       headers: {
         authorization: `Bearer ${config.accessToken}`,
         'content-type': 'application/json',
+        'user-agent': USER_AGENT,
       },
-      body: JSON.stringify(payload),
+      body,
       signal: controller.signal,
     });
     throwIfAborted(callerSignal);
@@ -97,12 +119,35 @@ async function cancelBody(response: Response): Promise<void> {
   }
 }
 
-async function backoff(retryNumber: number, signal: AbortSignal | undefined, dependencies: DeliveryDependencies): Promise<void> {
+/** Full-jitter delay bound before one-indexed retry `retryNumber`: 100ms doubling to a 1s cap. */
+export function retryDelayBoundMs(retryNumber: number): number {
+  return Math.min(100 * 2 ** Math.min(Math.max(retryNumber, 1) - 1, 4), 1_000);
+}
+
+async function backoff(
+  retryNumber: number,
+  retryAfterMs: number | undefined,
+  signal: AbortSignal | undefined,
+  dependencies: DeliveryDependencies,
+): Promise<void> {
   throwIfAborted(signal);
-  const bound = retryNumber === 1 ? 100 : 200;
-  const milliseconds = Math.floor(dependencies.random() * (bound + 1));
+  const bound = retryDelayBoundMs(retryNumber);
+  const jitter = Math.floor(dependencies.random() * (bound + 1));
+  const milliseconds = Math.max(jitter, retryAfterMs ?? 0);
   await abortableSleep(milliseconds, signal, dependencies.sleep);
   throwIfAborted(signal);
+}
+
+const HTTP_DATE = /^(?:[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT|[A-Za-z]{6,9}, \d{2}-[A-Za-z]{3}-\d{2} \d{2}:\d{2}:\d{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ \d]\d \d{2}:\d{2}:\d{2} \d{4})$/;
+
+/** Parses Retry-After delta-seconds or an HTTP-date; invalid values return undefined. */
+export function parseRetryAfterMs(value: string | null, now: number): number | undefined {
+  const trimmed = value?.trim() ?? '';
+  if (trimmed === '') return undefined;
+  if (/^\d+$/.test(trimmed)) return trimmed.length > 9 ? Number.POSITIVE_INFINITY : Number(trimmed) * 1_000;
+  if (!HTTP_DATE.test(trimmed)) return undefined;
+  const date = Date.parse(trimmed);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - now);
 }
 
 async function abortableSleep(
@@ -127,7 +172,15 @@ async function classifyResponse(
   signal: AbortSignal,
   observeBody: DeliveryDependencies['observeBody'],
 ): Promise<Acknowledgement> {
-  const body = await readBoundedBody(response, signal);
+  let body: BoundedBody;
+  try {
+    body = await readBoundedBody(response, signal);
+  } catch (error) {
+    // A received status is a known outcome even when its body cannot be read. A 200
+    // means the event was accepted, so it must not be retried as a transport failure.
+    if (response.status === 200) throw new ResponseDecodeError('response body could not be read', '', attempts, error);
+    body = { rawBody: '', bodyTruncated: false, observedBodyBytes: 0 };
+  }
   observeBody?.(body);
   const { rawBody, bodyTruncated } = body;
   if (response.status === 200) {
@@ -141,12 +194,19 @@ async function classifyResponse(
   }
 
   const parsed = parseApiError(rawBody);
-  const message = parsed?.message ?? response.statusText;
+  const message = parsed?.message ?? (response.statusText || STATUS_TEXT[response.status] || `HTTP ${response.status}`);
   const options = { rawBody, attempts, ...(parsed?.code === undefined ? {} : { code: parsed.code }) };
   if (response.status === 401) throw new AuthenticationError(message, options);
   if (response.status === 404) throw new EventDefinitionNotFoundError(message, options);
   throw new ApiError(message, response.status, options);
 }
+
+/** Reason phrases for statuses whose text a transport may omit (for example HTTP/2). */
+const STATUS_TEXT: Readonly<Record<number, string>> = {
+  400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 409: 'Conflict',
+  413: 'Payload Too Large', 422: 'Unprocessable Entity', 429: 'Too Many Requests',
+  500: 'Internal Server Error', 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout',
+};
 
 function parseAcknowledgement(rawBody: string): Acknowledgement {
   const value: unknown = JSON.parse(rawBody);

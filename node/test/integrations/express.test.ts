@@ -16,14 +16,14 @@ afterEach(async () => {
   expect(currentVisitorId()).toBeUndefined();
 });
 
-async function request(app: express.Express, path: string, headers: Record<string, string> = {}): Promise<Response> {
+async function request(app: express.Express, path: string, headers: Record<string, string> = {}, init: RequestInit = {}): Promise<Response> {
   const server = createServer(app);
   servers.push(server);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
   if (address === null || typeof address === 'string') throw new Error('Expected TCP listener');
-  return fetch(`http://127.0.0.1:${address.port}${path}`, { headers });
+  return fetch(`http://127.0.0.1:${address.port}${path}`, { ...init, headers });
 }
 
 function appWithVisitor(handler: express.RequestHandler): express.Express {
@@ -76,6 +76,26 @@ describe('Express visitor middleware', () => {
 
     await expect(Promise.all(responses.map((response) => response.json()))).resolves.toEqual(
       visitorIds.map((visitorId) => ({ visitorId })),
+    );
+  });
+
+  it('keeps the visitor through body parsing installed after the middleware on parallel POST requests', async () => {
+    const app = express();
+    app.use(visitorMiddleware());
+    app.use(express.json());
+    app.post('/orders', async (req, response) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 5)));
+      response.json({ visitorId: currentVisitorId() ?? null, orderId: (req.body as { orderId: string }).orderId });
+    });
+
+    const visitorIds = Array.from({ length: 10 }, (_, index) => `express-post-${index}`);
+    const responses = await Promise.all(visitorIds.map((visitorId, index) => request(app, '/orders', {
+      'x-cekat-visitor-id': visitorId,
+      'content-type': 'application/json',
+    }, { method: 'POST', body: JSON.stringify({ orderId: `order-${index}`, padding: 'x'.repeat(64_000) }) })));
+
+    await expect(Promise.all(responses.map((response) => response.json()))).resolves.toEqual(
+      visitorIds.map((visitorId, index) => ({ visitorId, orderId: `order-${index}` })),
     );
   });
 
