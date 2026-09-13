@@ -64,6 +64,8 @@
           "enum": ["user_registration", "user_login", "order_created", "order_paid", "custom_event"]
         },
         "event_key": {"type": "string"},
+        "amount": {"type": "number"},
+        "currency": {"type": "string"},
         "event": {"$ref": "#/$defs/event"},
         "properties_recipe": {
           "enum": ["nan", "positive_infinity", "negative_infinity", "unsafe_integer_high", "unsafe_integer_low", "cycle", "non_string_key", "runtime_object"]
@@ -75,7 +77,10 @@
         "properties": {
           "event": {"required": ["properties"]}
         }
-      }
+      },
+      "if": {"properties": {"name": {"const": "order_paid"}}, "required": ["name"]},
+      "then": {"required": ["amount", "currency"]},
+      "else": {"not": {"anyOf": [{"required": ["amount"]}, {"required": ["currency"]}]}}
     },
     "response_body_recipe": {
       "type": "object",

@@ -5,6 +5,8 @@
   "kind": "validation",
   "operation": {
     "name": "order_paid",
+    "amount": 125.75,
+    "currency": "IDR",
     "event": {
       "email": "  ",
       "phone_number": "\t",

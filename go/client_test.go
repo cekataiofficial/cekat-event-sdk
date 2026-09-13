@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,7 +80,7 @@ func TestClientRequestInvalidInputPrecedesRoundTripper(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	for _, event := range []Event{{ContactName: "Ada"}, {Email: "ada@example.test", Properties: map[string]any{"secret": func() {}}}} {
-		_, err := client.OrderPaid(context.Background(), event)
+		_, err := client.OrderPaid(context.Background(), 125.75, "IDR", event)
 		var validationErr *ValidationError
 		if !errors.As(err, &validationErr) {
 			t.Fatalf("OrderPaid() error = %T %v, want *ValidationError", err, err)
@@ -143,7 +144,7 @@ func TestClientOperationsMapToExpectedPayload(t *testing.T) {
 			return c.OrderCreated(context.Background(), Event{Email: "ada@example.test"})
 		}, "order_created", true},
 		{"order paid", func(c *Client) (*Acknowledgement, error) {
-			return c.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+			return c.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 		}, "order_paid", true},
 		{"custom event", func(c *Client) (*Acknowledgement, error) {
 			return c.CustomEvent(context.Background(), "trial_started", Event{Email: "ada@example.test"})
@@ -190,7 +191,7 @@ func TestClientRequestConstructionAndResponseClose(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: body, Header: make(http.Header), Request: request}, nil
 	})
 	client := newScriptedClient(t, roundTripper)
-	ack, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+	ack, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 	if err != nil || ack == nil {
 		t.Fatalf("OrderPaid() = %#v, %v", ack, err)
 	}
@@ -236,7 +237,7 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 				return nil
 			}
 
-			_, err = client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+			_, err = client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 			var apiErr *APIError
 			if !errors.As(err, &apiErr) || apiErr.StatusCode != status || apiErr.Attempts != 1 {
 				t.Errorf("OrderPaid() error = %#v, want known-outcome *APIError for status %d on attempt 1", err, status)
@@ -261,7 +262,7 @@ func TestTimeoutUsesEarlierInjectedClientDeadlineWithoutMutation(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	started := time.Now()
-	_, err = client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+	_, err = client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 	var transportErr *TransportError
 	if !errors.As(err, &transportErr) || !transportErr.DeliveryOutcomeUnknown {
 		t.Errorf("OrderPaid() error = %T %v, want unknown *TransportError", err, err)
@@ -285,7 +286,7 @@ func TestClientConcurrent(t *testing.T) {
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
-			_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test", Properties: map[string]any{"nested": []any{"value"}}})
+			_, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test", Properties: map[string]any{"nested": []any{"value"}}})
 			errors <- err
 		}()
 	}
@@ -295,5 +296,70 @@ func TestClientConcurrent(t *testing.T) {
 		if err != nil {
 			t.Errorf("concurrent OrderPaid() error = %v", err)
 		}
+	}
+}
+
+func TestOrderPaidSendsAmountAndCurrencyProperties(t *testing.T) {
+	var bodies []map[string]any
+	roundTripper := roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request payload: %v", err)
+		}
+		bodies = append(bodies, payload)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(canonicalSuccess)), Header: make(http.Header), Request: request}, nil
+	})
+	client := newScriptedClient(t, roundTripper)
+	properties := map[string]any{"order_id": "ord-1"}
+	if _, err := client.OrderPaid(context.Background(), 125000, " IDR ", Event{Email: "ada@example.test", Properties: properties}); err != nil {
+		t.Fatalf("OrderPaid() error = %v", err)
+	}
+	if _, err := client.OrderPaid(context.Background(), 12.5, "USD", Event{Email: "ada@example.test"}); err != nil {
+		t.Fatalf("OrderPaid() without properties error = %v", err)
+	}
+	want := []map[string]any{
+		{"order_id": "ord-1", "amount": float64(125000), "currency": " IDR "},
+		{"amount": 12.5, "currency": "USD"},
+	}
+	for index, body := range bodies {
+		if got := body["properties"]; !jsonValuesEqual(got, want[index]) {
+			t.Errorf("request %d properties = %#v, want %#v", index, got, want[index])
+		}
+	}
+	if len(properties) != 1 {
+		t.Errorf("caller properties were mutated: %#v", properties)
+	}
+}
+
+func TestOrderPaidValidatesAmountAndCurrency(t *testing.T) {
+	roundTripper := &countingRoundTripper{}
+	client, err := New("access-token", WithHTTPClient(&http.Client{Transport: roundTripper}))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	for _, test := range []struct {
+		name     string
+		amount   float64
+		currency string
+		event    Event
+		wantText string
+	}{
+		{name: "NaN amount", amount: math.NaN(), currency: "IDR", event: Event{Email: "ada@example.test"}, wantText: "amount"},
+		{name: "infinite amount", amount: math.Inf(1), currency: "IDR", event: Event{Email: "ada@example.test"}, wantText: "amount"},
+		{name: "unsafe integral amount", amount: 1e16, currency: "IDR", event: Event{Email: "ada@example.test"}, wantText: "properties.amount"},
+		{name: "blank currency", amount: 1, currency: " \t", event: Event{Email: "ada@example.test"}, wantText: "currency"},
+		{name: "amount property conflict", amount: 1, currency: "IDR", event: Event{Email: "ada@example.test", Properties: map[string]any{"amount": 2}}, wantText: `"amount"`},
+		{name: "currency property conflict", amount: 1, currency: "IDR", event: Event{Email: "ada@example.test", Properties: map[string]any{"currency": "USD"}}, wantText: `"currency"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := client.OrderPaid(context.Background(), test.amount, test.currency, test.event)
+			var validationErr *ValidationError
+			if !errors.As(err, &validationErr) || !strings.Contains(err.Error(), test.wantText) {
+				t.Errorf("OrderPaid() error = %v, want *ValidationError mentioning %q", err, test.wantText)
+			}
+		})
+	}
+	if got := roundTripper.Calls(); got != 0 {
+		t.Errorf("RoundTripper calls = %d, want 0", got)
 	}
 }

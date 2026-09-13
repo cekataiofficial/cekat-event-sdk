@@ -1,7 +1,7 @@
 import { deliver, type DeliveryConfig, type DeliveryDependencies } from './delivery.js';
 import { ValidationError } from './errors.js';
 import type { Acknowledgement, CallOptions, ClientOptions, EventInput, FetchLike } from './types.js';
-import { buildPayload, validateAccessToken } from './validation.js';
+import { buildPayload, validateAccessToken, withOrderPaidProperties } from './validation.js';
 import { currentVisitorId } from './visitor-context.js';
 
 const DEFAULT_ORIGIN = 'https://server.cekat.ai';
@@ -45,8 +45,13 @@ export class Client {
     return this.track('order_created', true, event, options);
   }
 
-  orderPaid(event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
-    return this.track('order_paid', true, event, options);
+  /**
+   * Submits the common order_paid event. The required `amount` (a finite number) and
+   * `currency` (a nonblank string) are sent as the `amount` and `currency` properties;
+   * `event.properties` must not already contain either key.
+   */
+  async orderPaid(amount: number, currency: string, event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
+    return this.track('order_paid', true, withOrderPaidProperties(amount, currency, event), options);
   }
 
   customEvent(eventKey: string, event: EventInput, options?: CallOptions): Promise<Acknowledgement> {

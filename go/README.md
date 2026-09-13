@@ -37,7 +37,7 @@ if err != nil {
 log.Printf("accepted event %s: %s", ack.EventKey, ack.Message)
 ```
 
-The client exposes the common `UserRegistration`, `UserLogin`, `OrderCreated`, and `OrderPaid` methods. For an event definition not represented by a common method, use `CustomEvent(ctx, eventKey, event)`.
+The client exposes the common `UserRegistration`, `UserLogin`, `OrderCreated`, and `OrderPaid` methods. `OrderPaid(ctx, amount, currency, event)` additionally requires a finite `amount` and a nonblank `currency`, which are sent as the `amount` and `currency` properties; do not also put those keys in `Event.Properties`. For an event definition not represented by a common method, use `CustomEvent(ctx, eventKey, event)`.
 
 `Acknowledgement` means the API accepted the event for asynchronous processing. It does **not** confirm durable storage, identity resolution, delivery completion, or analytics availability. Queue acknowledgement is not end-to-end delivery confirmation.
 
@@ -48,7 +48,7 @@ The client exposes the common `UserRegistration`, `UserLogin`, `OrderCreated`, a
 Every event carries an `event_id` and an `occurred_at` timestamp. When `Event.EventID` is blank the SDK generates a random UUID, and when `Event.OccurredAt` is zero it uses the time of the call. Both are fixed before the first attempt and reused by every retry, so Cekat can recognize retried deliveries of the same event. Supply your own `EventID` (for example an order or webhook delivery ID) when your application may submit the same business event more than once:
 
 ```go
-_, err := client.OrderPaid(ctx, cekat.Event{
+_, err := client.OrderPaid(ctx, order.Total, order.Currency, cekat.Event{
     Email:      order.CustomerEmail,
     EventID:    "order-paid-" + order.ID,
     OccurredAt: order.PaidAt,
@@ -133,7 +133,7 @@ Pass the context that carries the visitor ID:
 Use `errors.As` to handle typed SDK failures and preserve the original error for logs and diagnostics:
 
 ```go
-ack, err := client.OrderPaid(ctx, event)
+ack, err := client.OrderPaid(ctx, 125000, "IDR", event)
 if err != nil {
     var authErr *cekat.AuthenticationError
     var apiErr *cekat.APIError

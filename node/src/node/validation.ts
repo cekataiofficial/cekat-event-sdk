@@ -44,6 +44,29 @@ export function buildPayload(
   return payload;
 }
 
+/**
+ * Returns a copy of `event` whose properties include the required order_paid arguments.
+ * Non-object events are returned unchanged so ordinary event validation reports them.
+ */
+export function withOrderPaidProperties(amount: number, currency: string, event: EventInput): EventInput {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) {
+    throw new ValidationError('amount must be a finite number');
+  }
+  if (typeof currency !== 'string' || currency.trim() === '') {
+    throw new ValidationError('currency must not be blank');
+  }
+  if (typeof event !== 'object' || event === null) return event;
+  const properties = event.properties;
+  if (properties !== undefined && properties !== null && typeof properties === 'object') {
+    for (const key of ['amount', 'currency']) {
+      if (Object.hasOwn(properties, key)) {
+        throw new ValidationError(`properties must not contain "${key}"; pass it as the orderPaid argument`);
+      }
+    }
+  }
+  return { ...event, properties: { ...properties, amount, currency } };
+}
+
 function validateEvent(eventKey: string, event: EventInput): void {
   if (typeof eventKey !== 'string' || eventKey.trim() === '') {
     throw new ValidationError('event key must not be blank');

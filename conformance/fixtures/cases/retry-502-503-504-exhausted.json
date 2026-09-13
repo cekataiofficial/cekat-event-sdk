@@ -5,6 +5,8 @@
   "kind": "retry",
   "operation": {
     "name": "order_paid",
+    "amount": 125.75,
+    "currency": "IDR",
     "event": {
       "email": "buyer@example.com",
       "properties": {
@@ -53,7 +55,9 @@
         "is_common": true,
         "email": "buyer@example.com",
         "properties": {
-          "order_id": "ord-paid"
+          "order_id": "ord-paid",
+          "amount": 125.75,
+          "currency": "IDR"
         }
       }
     }
