@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>Cekat.EventSdk.AspNetCore</PackageId>
+    <Description>ASP.NET Core visitor middleware and service registration for the Cekat event SDK.</Description>
+    <PackageTags>$(PackageTags);aspnetcore</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Cekat.EventSdk\Cekat.EventSdk.csproj" />
+  </ItemGroup>
+</Project>

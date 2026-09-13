@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{B55AE4C1-CDCF-4A7D-A0F6-4E2C3DF6B791}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cekat.EventSdk.AspNetCore", "src\Cekat.EventSdk.AspNetCore\Cekat.EventSdk.AspNetCore.csproj", "{BBD980E6-C48A-4800-89E7-882ACDA05995}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cekat.EventSdk.AzureFunctions", "src\Cekat.EventSdk.AzureFunctions\Cekat.EventSdk.AzureFunctions.csproj", "{B07BA0BA-A983-4C2D-A79E-49A4A222F674}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cekat.EventSdk", "src\Cekat.EventSdk\Cekat.EventSdk.csproj", "{C44FE6F1-A0DA-482E-922A-58821C133634}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{DE748416-7D70-486B-931A-48491BEFC52E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cekat.EventSdk.AspNetCore.Tests", "tests\Cekat.EventSdk.AspNetCore.Tests\Cekat.EventSdk.AspNetCore.Tests.csproj", "{DF6439EE-8B50-412B-82EF-E0354E0CCA16}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cekat.EventSdk.AzureFunctions.Tests", "tests\Cekat.EventSdk.AzureFunctions.Tests\Cekat.EventSdk.AzureFunctions.Tests.csproj", "{E89D3FA1-375B-4732-B4DF-0DF35932ADAF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cekat.EventSdk.Tests", "tests\Cekat.EventSdk.Tests\Cekat.EventSdk.Tests.csproj", "{E54FC350-E4CF-4F63-ABA8-ED0005057755}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BBD980E6-C48A-4800-89E7-882ACDA05995}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BBD980E6-C48A-4800-89E7-882ACDA05995}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BBD980E6-C48A-4800-89E7-882ACDA05995}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BBD980E6-C48A-4800-89E7-882ACDA05995}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B07BA0BA-A983-4C2D-A79E-49A4A222F674}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B07BA0BA-A983-4C2D-A79E-49A4A222F674}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B07BA0BA-A983-4C2D-A79E-49A4A222F674}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B07BA0BA-A983-4C2D-A79E-49A4A222F674}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C44FE6F1-A0DA-482E-922A-58821C133634}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C44FE6F1-A0DA-482E-922A-58821C133634}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C44FE6F1-A0DA-482E-922A-58821C133634}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C44FE6F1-A0DA-482E-922A-58821C133634}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DF6439EE-8B50-412B-82EF-E0354E0CCA16}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DF6439EE-8B50-412B-82EF-E0354E0CCA16}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DF6439EE-8B50-412B-82EF-E0354E0CCA16}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DF6439EE-8B50-412B-82EF-E0354E0CCA16}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E89D3FA1-375B-4732-B4DF-0DF35932ADAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E89D3FA1-375B-4732-B4DF-0DF35932ADAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E89D3FA1-375B-4732-B4DF-0DF35932ADAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E89D3FA1-375B-4732-B4DF-0DF35932ADAF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E54FC350-E4CF-4F63-ABA8-ED0005057755}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E54FC350-E4CF-4F63-ABA8-ED0005057755}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E54FC350-E4CF-4F63-ABA8-ED0005057755}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E54FC350-E4CF-4F63-ABA8-ED0005057755}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{BBD980E6-C48A-4800-89E7-882ACDA05995} = {B55AE4C1-CDCF-4A7D-A0F6-4E2C3DF6B791}
+		{B07BA0BA-A983-4C2D-A79E-49A4A222F674} = {B55AE4C1-CDCF-4A7D-A0F6-4E2C3DF6B791}
+		{C44FE6F1-A0DA-482E-922A-58821C133634} = {B55AE4C1-CDCF-4A7D-A0F6-4E2C3DF6B791}
+		{DF6439EE-8B50-412B-82EF-E0354E0CCA16} = {DE748416-7D70-486B-931A-48491BEFC52E}
+		{E89D3FA1-375B-4732-B4DF-0DF35932ADAF} = {DE748416-7D70-486B-931A-48491BEFC52E}
+		{E54FC350-E4CF-4F63-ABA8-ED0005057755} = {DE748416-7D70-486B-931A-48491BEFC52E}
+	EndGlobalSection
+EndGlobal

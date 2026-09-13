@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+[ "$#" -eq 0 ] || { echo "conformance accepts no positional arguments" >&2; exit 2; }
+required_env='CEKAT_CONFORMANCE_BASE_URL CEKAT_CONFORMANCE_CONTROL_URL CEKAT_CONFORMANCE_ACCESS_TOKEN CEKAT_CONFORMANCE_FIXTURES'
+missing=''
+for name in $required_env; do
+  eval "value=\${$name-}"
+  [ -n "$value" ] || missing="$missing $name"
+done
+[ -z "$missing" ] || { echo "missing required conformance inputs:$missing" >&2; exit 2; }
+for name in $(env | sed -n 's/^\(CEKAT_CONFORMANCE_[^=]*\)=.*/\1/p'); do
+  case " $required_env " in *" $name "*) ;; *) echo "unrecognized conformance environment variable: $name" >&2; exit 2 ;; esac
+done
+cd "$(dirname "$0")/.."
+if [ -n "${PYTHON:-}" ]; then :; elif [ -x .venv/bin/python ]; then PYTHON=.venv/bin/python; else PYTHON=python3; fi
+"$PYTHON" - "$CEKAT_CONFORMANCE_BASE_URL" "$CEKAT_CONFORMANCE_CONTROL_URL" "$CEKAT_CONFORMANCE_FIXTURES" <<'PY'
+import os, sys
+from urllib.parse import urlsplit
+for name, value in (("CEKAT_CONFORMANCE_BASE_URL", sys.argv[1]), ("CEKAT_CONFORMANCE_CONTROL_URL", sys.argv[2])):
+    parts = urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.username or parts.password \
+            or parts.path not in ("", "/") or "?" in value or "#" in value:
+        sys.exit(f"{name} must be an absolute pathless HTTP(S) origin")
+fixtures = sys.argv[3]
+if not os.path.isabs(fixtures) or not os.path.isdir(fixtures) or not os.access(fixtures, os.R_OK):
+    sys.exit("CEKAT_CONFORMANCE_FIXTURES must be an absolute readable directory")
+PY
+# -s streams one result line per fixture; -p no:cacheprovider keeps the working tree clean.
+exec "$PYTHON" -m pytest -s -q -p no:cacheprovider tests/conformance/test_shared_contract.py

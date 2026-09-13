@@ -1,0 +1,65 @@
+#!/bin/sh
+# Builds verified local NuGet packages and a SHA-256 manifest. It runs checks and builds only;
+# it never pushes, signs, tags, or publishes. Release owners handle distribution.
+set -eu
+
+VERSION=0.1.0
+PACKAGES="Cekat.EventSdk Cekat.EventSdk.AspNetCore Cekat.EventSdk.AzureFunctions"
+usage() {
+  echo "$1" >&2
+  echo "usage: scripts/package --version $VERSION --output <absolute-empty-directory>" >&2
+  exit 2
+}
+
+[ "$#" -eq 4 ] && [ "$1" = "--version" ] && [ "$3" = "--output" ] || usage "expected exactly --version $VERSION --output <absolute-empty-directory>"
+[ "$2" = "$VERSION" ] || usage "only version $VERSION may be packaged"
+OUTPUT=$4
+case "$OUTPUT" in /*) ;; *) usage "output must be an absolute directory" ;; esac
+case "$OUTPUT/" in */./*|*/../*) usage "output must not contain traversal components" ;; esac
+if [ -e "$OUTPUT" ] || [ -L "$OUTPUT" ]; then
+  [ -d "$OUTPUT" ] && [ ! -L "$OUTPUT" ] || usage "output must be a non-symlink directory"
+  [ -z "$(ls -A "$OUTPUT")" ] || usage "output directory must be empty so stale artifacts cannot be packaged"
+fi
+DOTNET_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
+PARENT="$(dirname "$OUTPUT")"
+[ -d "$PARENT" ] || usage "output parent directory must exist"
+case "$(cd "$PARENT" && pwd -P)/" in "$DOTNET_DIR"/*) usage "output must be outside the package working tree" ;; esac
+
+cd "$DOTNET_DIR"
+dotnet test Cekat.EventSdk.sln --configuration Release ${TEST_TARGET_FRAMEWORK:+-p:TestTargetFramework=$TEST_TARGET_FRAMEWORK}
+
+audit="$(dotnet list Cekat.EventSdk.sln package --vulnerable --include-transitive)"
+echo "$audit"
+if echo "$audit" | grep -q "has the following vulnerable packages"; then
+  echo "vulnerable packages found" >&2
+  exit 1
+fi
+
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT INT TERM
+for package in $PACKAGES; do
+  dotnet pack "src/$package/$package.csproj" --configuration Release --output "$staging"
+done
+expected=""
+for package in $PACKAGES; do expected="$expected $package.$VERSION.nupkg"; done
+actual="$(cd "$staging" && ls | tr '\n' ' ')"
+[ "$(echo $actual | tr ' ' '\n' | sort | tr '\n' ' ')" = "$(echo $expected | tr ' ' '\n' | sort | tr '\n' ' ')" ] || { echo "unexpected package artifacts: $actual" >&2; exit 1; }
+
+mkdir -p "$OUTPUT"
+OUTPUT="$(cd "$OUTPUT" && pwd -P)"
+mv "$staging"/*.nupkg "$OUTPUT"/
+
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+manifest="$OUTPUT/.manifest-$$.tmp"
+{
+  printf '{\n  "schema_version": 1,\n  "language": "dotnet",\n  "version": "%s",\n  "artifacts": [\n' "$VERSION"
+  separator=""
+  for file in $(cd "$OUTPUT" && ls *.nupkg | LC_ALL=C sort); do
+    printf '%s    {"path": "%s", "sha256": "%s", "size_bytes": %s}' "$separator" "$file" "$(sha256 "$OUTPUT/$file")" "$(wc -c < "$OUTPUT/$file" | tr -d ' ')"
+    separator=",
+"
+  done
+  printf '\n  ]\n}\n'
+} > "$manifest"
+mv "$manifest" "$OUTPUT/manifest.json"
+echo "Prepared local $VERSION .NET package artifacts in $OUTPUT"
