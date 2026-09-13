@@ -31,16 +31,18 @@ const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
 await cekat.userRegistration({ email: 'person@example.test' });
 await cekat.userLogin({ phoneNumber: '+15551234567', visitorId: 'browser-visitor' });
 await cekat.orderCreated({ email: 'person@example.test', properties: { order_id: 'o-1' } });
-await cekat.orderPaid({ email: 'person@example.test', properties: { total: 42 } });
+await cekat.orderPaid(125000, 'IDR', { email: 'person@example.test', properties: { order_id: 'o-1' } });
 await cekat.customEvent('wishlist_updated', { email: 'person@example.test', contactName: 'Ada' });
 ```
+
+`orderPaid(amount, currency, event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `event.properties`.
 
 A nonblank explicit `visitorId` takes precedence over request context; a blank explicit value falls back to context. Email and phone are retained as submitted but at least one must be nonblank. Event properties are JSON values only (finite safe numbers, arrays, and plain objects); convert values such as `Date` to strings first.
 
 Every event carries an `event_id` and an `occurred_at` timestamp. When `eventId` is blank the SDK generates a random UUID, and when `occurredAt` (a `Date`) is omitted it uses the time of the call. Both are fixed before the first attempt and reused by every retry, so Cekat can recognize retried deliveries. Supply your own `eventId` (for example an order or webhook ID) when the same business event may be sent more than once:
 
 ```ts
-await cekat.orderPaid({ email: order.email, eventId: `order-paid-${order.id}`, occurredAt: order.paidAt });
+await cekat.orderPaid(order.total, order.currency, { email: order.email, eventId: `order-paid-${order.id}`, occurredAt: order.paidAt });
 ```
 
 ## Keep tracking off the request's critical path

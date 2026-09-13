@@ -5,11 +5,12 @@
   "kind": "request",
   "operation": {
     "name": "order_paid",
+    "amount": 125.75,
+    "currency": "IDR",
     "event": {
       "email": "buyer@example.com",
       "properties": {
-        "order_id": "ord-paid",
-        "amount": 125.75
+        "order_id": "ord-paid"
       }
     }
   },
@@ -25,7 +26,8 @@
         "email": "buyer@example.com",
         "properties": {
           "order_id": "ord-paid",
-          "amount": 125.75
+          "amount": 125.75,
+          "currency": "IDR"
         }
       }
     }

@@ -123,7 +123,7 @@ func TestConfiguredRetryCountUsesSaturatedMaxima(t *testing.T) {
 	client.config.jitter = func(max time.Duration) time.Duration { maxima = append(maxima, max); return 0 }
 	client.config.sleep = func(context.Context, time.Duration) error { return nil }
 
-	_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+	_, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Attempts != 6 {
 		t.Errorf("OrderPaid() error = %#v, want final *APIError at attempt 6", err)
@@ -168,7 +168,7 @@ func TestRetry500AndTransportFailures(t *testing.T) {
 			client.config.jitter = func(max time.Duration) time.Duration { maxima = append(maxima, max); return 0 }
 			client.config.sleep = func(context.Context, time.Duration) error { return nil }
 
-			ack, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test", Properties: map[string]any{"order": "one"}})
+			ack, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test", Properties: map[string]any{"order": "one"}})
 			if err != nil {
 				t.Fatalf("OrderPaid() error = %v", err)
 			}
@@ -197,7 +197,7 @@ func TestRetryPermanentStatusesAreNotRetried(t *testing.T) {
 			roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: status, body: `{"success":false,"error":"permanent"}`}}}
 			client := newScriptedClient(t, roundTripper)
 			client.config.sleep = func(context.Context, time.Duration) error { t.Fatal("sleep called for permanent status"); return nil }
-			_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+			_, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 			if err == nil {
 				t.Fatal("OrderPaid() error = nil, want status error")
 			}
@@ -215,7 +215,7 @@ func TestRetryTransientStatuses(t *testing.T) {
 			client := newScriptedClient(t, roundTripper)
 			client.config.jitter = func(time.Duration) time.Duration { return 0 }
 			client.config.sleep = func(context.Context, time.Duration) error { return nil }
-			if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil {
+			if _, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"}); err != nil {
 				t.Fatalf("OrderPaid() error = %v", err)
 			}
 			if got := roundTripper.Calls(); got != 2 {
@@ -236,7 +236,7 @@ func TestRetryAfter(t *testing.T) {
 		client.config.jitter = func(time.Duration) time.Duration { return 50 * time.Millisecond }
 		var slept []time.Duration
 		client.config.sleep = func(_ context.Context, delay time.Duration) error { slept = append(slept, delay); return nil }
-		if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil {
+		if _, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"}); err != nil {
 			t.Fatalf("OrderPaid() error = %v", err)
 		}
 		if !slices.Equal(slept, []time.Duration{2 * time.Second}) {
@@ -247,7 +247,7 @@ func TestRetryAfter(t *testing.T) {
 		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: http.StatusServiceUnavailable, header: retryAfter("6"), body: "maintenance"}}}
 		client := newScriptedClient(t, roundTripper)
 		client.config.sleep = func(context.Context, time.Duration) error { t.Fatal("sleep called beyond Retry-After cap"); return nil }
-		_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+		_, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 		var apiErr *APIError
 		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable || apiErr.Attempts != 1 {
 			t.Errorf("OrderPaid() error = %#v, want 503 *APIError after one attempt", err)
@@ -259,7 +259,7 @@ func TestRetryAfter(t *testing.T) {
 		client.config.jitter = func(time.Duration) time.Duration { return 7 * time.Millisecond }
 		var slept []time.Duration
 		client.config.sleep = func(_ context.Context, delay time.Duration) error { slept = append(slept, delay); return nil }
-		if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil {
+		if _, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"}); err != nil {
 			t.Fatalf("OrderPaid() error = %v", err)
 		}
 		if !slices.Equal(slept, []time.Duration{7 * time.Millisecond}) {
@@ -308,7 +308,7 @@ func TestInterruptedBodies(t *testing.T) {
 		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: http.StatusOK, reader: &failingReader{prefix: []byte(`{"success":tr`)}}}}
 		client := newScriptedClient(t, roundTripper)
 		client.config.sleep = func(context.Context, time.Duration) error { t.Fatal("sleep called after accepted 200"); return nil }
-		_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+		_, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 		var decodeErr *ResponseDecodeError
 		if !errors.As(err, &decodeErr) || decodeErr.Attempts != 1 || roundTripper.Calls() != 1 {
 			t.Errorf("OrderPaid() error = %#v with %d calls, want one *ResponseDecodeError", err, roundTripper.Calls())
@@ -319,7 +319,7 @@ func TestInterruptedBodies(t *testing.T) {
 		client := newScriptedClient(t, roundTripper)
 		client.config.jitter = func(time.Duration) time.Duration { return 0 }
 		client.config.sleep = func(context.Context, time.Duration) error { return nil }
-		if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil || roundTripper.Calls() != 2 {
+		if _, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"}); err != nil || roundTripper.Calls() != 2 {
 			t.Errorf("OrderPaid() error = %v with %d calls, want success after 2 calls", err, roundTripper.Calls())
 		}
 	})
@@ -331,7 +331,7 @@ func TestRetryFinalFailureClassificationAndDefaultCap(t *testing.T) {
 		client := newScriptedClient(t, roundTripper)
 		client.config.jitter = func(time.Duration) time.Duration { return 0 }
 		client.config.sleep = func(context.Context, time.Duration) error { return nil }
-		_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+		_, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 		var apiErr *APIError
 		if !errors.As(err, &apiErr) || apiErr.Attempts != 3 {
 			t.Errorf("error = %T %v, want final *APIError at attempt 3", err, err)
@@ -342,7 +342,7 @@ func TestRetryFinalFailureClassificationAndDefaultCap(t *testing.T) {
 		client := newScriptedClient(t, roundTripper)
 		client.config.jitter = func(time.Duration) time.Duration { return 0 }
 		client.config.sleep = func(context.Context, time.Duration) error { return nil }
-		_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+		_, err := client.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 		var transportErr *TransportError
 		if !errors.As(err, &transportErr) || transportErr.Attempts != 3 || !transportErr.DeliveryOutcomeUnknown {
 			t.Errorf("error = %#v, want final unknown *TransportError at attempt 3", err)
@@ -356,7 +356,7 @@ func TestCancellation(t *testing.T) {
 		client := newScriptedClient(t, roundTripper)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := client.OrderPaid(ctx, Event{Email: "ada@example.test"})
+		_, err := client.OrderPaid(ctx, 125.75, "IDR", Event{Email: "ada@example.test"})
 		if !errors.Is(err, context.Canceled) || roundTripper.Calls() != 0 {
 			t.Errorf("OrderPaid() = %v with %d calls, want raw cancellation and zero calls", err, roundTripper.Calls())
 		}
@@ -371,7 +371,7 @@ func TestCancellation(t *testing.T) {
 		client := newScriptedClient(t, roundTripper, WithRetryCount(2))
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
-		go func() { _, err := client.OrderPaid(ctx, Event{Email: "ada@example.test"}); done <- err }()
+		go func() { _, err := client.OrderPaid(ctx, 125.75, "IDR", Event{Email: "ada@example.test"}); done <- err }()
 		<-started
 		cancel()
 		if err := <-done; !errors.Is(err, context.Canceled) {
@@ -386,7 +386,7 @@ func TestCancellation(t *testing.T) {
 		client.config.sleep = func(ctx context.Context, _ time.Duration) error { close(started); <-ctx.Done(); return ctx.Err() }
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
-		go func() { _, err := client.OrderPaid(ctx, Event{Email: "ada@example.test"}); done <- err }()
+		go func() { _, err := client.OrderPaid(ctx, 125.75, "IDR", Event{Email: "ada@example.test"}); done <- err }()
 		<-started
 		cancel()
 		if err := <-done; !errors.Is(err, context.Canceled) || roundTripper.Calls() != 1 {

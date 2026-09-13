@@ -27,8 +27,15 @@ func (c *Client) OrderCreated(ctx context.Context, event Event) (*Acknowledgemen
 	return c.track(ctx, "order_created", true, event)
 }
 
-// OrderPaid submits the common order_paid event.
-func (c *Client) OrderPaid(ctx context.Context, event Event) (*Acknowledgement, error) {
+// OrderPaid submits the common order_paid event. The required amount and
+// currency are sent as the "amount" and "currency" properties; event.Properties
+// must not already contain either key. amount must be finite and currency must
+// not be blank. Currency codes are not validated by the SDK.
+func (c *Client) OrderPaid(ctx context.Context, amount float64, currency string, event Event) (*Acknowledgement, error) {
+	event, err := withOrderPaidProperties(amount, currency, event)
+	if err != nil {
+		return nil, err
+	}
 	return c.track(ctx, "order_paid", true, event)
 }
 

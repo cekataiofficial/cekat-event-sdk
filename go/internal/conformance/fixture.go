@@ -45,6 +45,8 @@ type inboundRecipe struct {
 type operation struct {
 	Name             string      `json:"name"`
 	EventKey         *string     `json:"event_key"`
+	Amount           *float64    `json:"amount"`
+	Currency         *string     `json:"currency"`
 	Event            eventRecipe `json:"event"`
 	PropertiesRecipe *string     `json:"properties_recipe"`
 }
@@ -205,7 +207,7 @@ func validateFixtureShape(data []byte) error {
 	if err := closedObject(root, []string{"schema_version", "id", "description", "kind", "applicability", "client", "inbound", "operation", "responses", "response_body_recipe", "cancellation", "expect"}, []string{"schema_version", "id", "description", "kind", "operation", "expect"}); err != nil {
 		return err
 	}
-	if err := checkObject(root["operation"], []string{"name", "event_key", "event", "properties_recipe"}, []string{"name", "event"}); err != nil {
+	if err := checkObject(root["operation"], []string{"name", "event_key", "amount", "currency", "event", "properties_recipe"}, []string{"name", "event"}); err != nil {
 		return fmt.Errorf("operation: %w", err)
 	}
 	var operation map[string]json.RawMessage

@@ -107,6 +107,28 @@ func propertyPath(parent, key string) string {
 	return parent + "." + key
 }
 
+// withOrderPaidProperties returns a copy of event whose properties include the
+// required order_paid arguments. The caller's properties map is not mutated.
+func withOrderPaidProperties(amount float64, currency string, event Event) (Event, error) {
+	if math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return Event{}, &ValidationError{Message: "amount must be a finite number"}
+	}
+	if strings.TrimSpace(currency) == "" {
+		return Event{}, &ValidationError{Message: "currency must not be blank"}
+	}
+	properties := make(map[string]any, len(event.Properties)+2)
+	for key, value := range event.Properties {
+		if key == "amount" || key == "currency" {
+			return Event{}, &ValidationError{Message: "properties must not contain " + strconv.Quote(key) + "; pass it as the OrderPaid argument"}
+		}
+		properties[key] = value
+	}
+	properties["amount"] = amount
+	properties["currency"] = currency
+	event.Properties = properties
+	return event, nil
+}
+
 func buildPayload(ctx context.Context, eventKey string, isCommon bool, event Event) (wirePayload, error) {
 	if err := validateEvent(eventKey, event); err != nil {
 		return wirePayload{}, err

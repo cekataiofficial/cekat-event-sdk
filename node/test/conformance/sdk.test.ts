@@ -105,7 +105,7 @@ function dispatch(client: Client, fixture: Fixture, signal?: AbortSignal) {
   const event = eventFor(fixture); const options = signal === undefined ? undefined : { signal };
   switch (fixture.operation.name) {
     case 'user_registration': return client.userRegistration(event, options); case 'user_login': return client.userLogin(event, options);
-    case 'order_created': return client.orderCreated(event, options); case 'order_paid': return client.orderPaid(event, options);
+    case 'order_created': return client.orderCreated(event, options); case 'order_paid': return client.orderPaid(fixture.operation.amount, fixture.operation.currency, event, options);
     case 'custom_event': return client.customEvent(fixture.operation.event_key, event, options);
     default: throw new Error(`unknown operation ${fixture.operation.name}`);
   }

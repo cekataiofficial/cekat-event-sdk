@@ -88,7 +88,7 @@ describe('Client configuration', () => {
     const fetch = successfulFetch();
     const client = new Client('token', { baseURL: 'https://ingest.example/', fetch });
 
-    await client.orderPaid({ email: 'ada@example.test' });
+    await client.orderPaid(125.75, 'IDR', { email: 'ada@example.test' });
     expect(fetch).toHaveBeenCalledWith('https://ingest.example/api/events/ingest', expect.anything());
   });
 
@@ -162,7 +162,7 @@ describe('Client event facade', () => {
       client.userRegistration(event),
       client.userLogin(event),
       client.orderCreated(event),
-      client.orderPaid(event),
+      client.orderPaid(125.75, 'IDR', event),
       client.customEvent('trial_started', event),
     ]);
 
@@ -177,7 +177,7 @@ describe('Client event facade', () => {
       { event_key: 'user_registration', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
       { event_key: 'user_login', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
       { event_key: 'order_created', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
-      { event_key: 'order_paid', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
+      { event_key: 'order_paid', is_common: true, email: 'ada@example.test', properties: { order: 'A-1', amount: 125.75, currency: 'IDR' } },
       { event_key: 'trial_started', is_common: false, email: 'ada@example.test', properties: { order: 'A-1' } },
     ]);
     for (const [, init] of (fetch as ReturnType<typeof vi.fn>).mock.calls) {
@@ -223,15 +223,51 @@ describe('Client event facade', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('sends orderPaid amount and currency as properties without mutating caller properties', async () => {
+    const fetch = successfulFetch();
+    const client = new Client('token', { fetch });
+    const properties = { order_id: 'ord-1' };
+    await client.orderPaid(125_000, ' IDR ', { email: 'ada@example.test', properties });
+    await client.orderPaid(12.5, 'USD', { email: 'ada@example.test' });
+    expect(payloads(fetch).map((payload) => payload.properties)).toEqual([
+      { order_id: 'ord-1', amount: 125_000, currency: ' IDR ' },
+      { amount: 12.5, currency: 'USD' },
+    ]);
+    expect(properties).toEqual({ order_id: 'ord-1' });
+  });
+
+  it('rejects invalid orderPaid amount, currency, and conflicting properties before delivery', async () => {
+    const fetch = successfulFetch();
+    const client = new Client('token', { fetch });
+    const email = 'ada@example.test';
+    for (const [amount, currency, event, text] of [
+      [Number.NaN, 'IDR', { email }, 'amount'],
+      [Number.POSITIVE_INFINITY, 'IDR', { email }, 'amount'],
+      ['125' as never, 'IDR', { email }, 'amount'],
+      [1e16, 'IDR', { email }, 'properties.amount'],
+      [1, ' \t', { email }, 'currency'],
+      [1, undefined as never, { email }, 'currency'],
+      [1, 'IDR', { email, properties: { amount: 2 } }, '"amount"'],
+      [1, 'IDR', { email, properties: { currency: 'USD' } }, '"currency"'],
+    ] as const) {
+      let outcome: Promise<unknown> | undefined;
+      expect(() => { outcome = client.orderPaid(amount, currency, event); }).not.toThrow();
+      await expect(outcome).rejects.toThrow(text);
+      await expect(outcome).rejects.toBeInstanceOf(ValidationError);
+    }
+    await expect(client.orderPaid(1, 'IDR', undefined as never)).rejects.toBeInstanceOf(ValidationError);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('sends caller event IDs and timestamps unchanged across retries', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
       .mockImplementationOnce(successfulFetch());
     const client = new Client('token', { fetch, retryCount: 1 });
-    await client.orderPaid({ email: 'ada@example.test', eventId: ' order-1 ', occurredAt: new Date('2026-09-13T08:15:30.250+07:00') });
+    await client.orderPaid(125.75, 'IDR', { email: 'ada@example.test', eventId: ' order-1 ', occurredAt: new Date('2026-09-13T08:15:30.250+07:00') });
     const bodies = fetch.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
     expect(bodies[0]).toMatchObject({ event_id: 'order-1', occurred_at: '2026-09-13T01:15:30.250Z' });
     expect(bodies[1]).toEqual(bodies[0]);
-    await expect(client.orderPaid({ email: 'ada@example.test', occurredAt: new Date(Number.NaN) })).rejects.toThrow('occurredAt');
+    await expect(client.orderPaid(125.75, 'IDR', { email: 'ada@example.test', occurredAt: new Date(Number.NaN) })).rejects.toThrow('occurredAt');
   });
 });
