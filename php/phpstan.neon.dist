@@ -1,0 +1,11 @@
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        # Conformance fixtures are schema-validated JSON decoded into stdClass trees.
+        -
+            identifiers: [property.notFound, match.unhandled]
+            path: tests/Conformance/SharedFixturesTest.php
