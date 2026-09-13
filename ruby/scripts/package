@@ -1,0 +1,68 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Builds a verified local gem and SHA-256 manifest. It runs checks and builds only; it never
+# uploads, signs, tags, or pushes. Release owners handle distribution.
+
+require "digest"
+require "fileutils"
+require "json"
+require "securerandom"
+require "tmpdir"
+
+VERSION = "0.1.0"
+ROOT = File.expand_path("..", __dir__)
+
+def usage(message)
+  warn "#{message}\nusage: scripts/package --version #{VERSION} --output <absolute-empty-directory>"
+  exit 2
+end
+
+def run(*command)
+  warn "> #{command.join(' ')}"
+  return if system(*command)
+
+  warn "command failed: #{command.join(' ')}"
+  exit 1
+end
+
+arguments = ARGV
+unless arguments.size == 4 && arguments[0] == "--version" && arguments[2] == "--output"
+  usage("expected exactly --version #{VERSION} --output <absolute-empty-directory>")
+end
+usage("only version #{VERSION} may be packaged") unless arguments[1] == VERSION
+output = arguments[3]
+usage("output must be an absolute directory") unless output.start_with?("/")
+usage("output must not contain traversal components") if output.split("/").intersect?([".", ".."])
+if File.exist?(output) || File.symlink?(output)
+  usage("output must be a non-symlink directory") if File.symlink?(output) || !File.directory?(output)
+  usage("output directory must be empty so stale artifacts cannot be packaged") unless Dir.empty?(output)
+else
+  FileUtils.mkdir_p(output)
+end
+canonical_output = File.realpath(output)
+usage("output must be outside the package working tree") if canonical_output == ROOT || canonical_output.start_with?("#{ROOT}/")
+
+Dir.chdir(ROOT)
+run "bundle", "install", "--quiet"
+run "bundle", "exec", "rake", "spec"
+run "bundle", "exec", "rubocop"
+run "bundle", "exec", "bundle-audit", "check", "--update"
+
+gem_name = "cekat-event-sdk-#{VERSION}.gem"
+Dir.mktmpdir("cekat-ruby-package") do |staging|
+  run "gem", "build", "cekat-event-sdk.gemspec", "--output", File.join(staging, gem_name)
+  FileUtils.mv(File.join(staging, gem_name), File.join(canonical_output, gem_name))
+end
+
+path = File.join(canonical_output, gem_name)
+manifest = {
+  schema_version: 1,
+  language: "ruby",
+  version: VERSION,
+  artifacts: [{ path: gem_name, sha256: Digest::SHA256.file(path).hexdigest, size_bytes: File.size(path) }]
+}
+temporary = File.join(canonical_output, ".manifest-#{SecureRandom.hex(8)}.tmp")
+File.write(temporary, "#{JSON.pretty_generate(manifest)}\n")
+File.rename(temporary, File.join(canonical_output, "manifest.json"))
+puts "Prepared local #{VERSION} Ruby package artifacts in #{canonical_output}"

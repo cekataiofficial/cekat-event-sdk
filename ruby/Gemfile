@@ -1,0 +1,23 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec
+
+# CI selects framework lines with RAILS_VERSION and RACK_VERSION; defaults are the current lines.
+rails_version = ENV.fetch("RAILS_VERSION", "~> 8.1.0")
+rack_version = ENV.fetch("RACK_VERSION", "~> 3.2")
+# Rails 8.0's JSON rendering is incompatible with json 3.x (it passes the removed quirks_mode option).
+json_version = ENV.fetch("JSON_VERSION", ">= 2.7")
+
+group :development, :test do
+  gem "actionpack", rails_version
+  gem "bundler-audit", "~> 0.9"
+  gem "json", json_version
+  gem "json_schemer", "~> 2.4"
+  gem "rack", rack_version
+  gem "railties", rails_version
+  gem "rake", "~> 13.0"
+  gem "rspec", "~> 3.13"
+  gem "rubocop", "~> 1.80", require: false
+end

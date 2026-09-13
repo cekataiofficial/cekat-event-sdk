@@ -1,0 +1,22 @@
+# frozen_string_literal: true
+
+require "rspec/core/rake_task"
+
+# Rails boots one application per process, so its specs run separately from the rest.
+RSpec::Core::RakeTask.new(:core_spec) do |task|
+  task.exclude_pattern = "spec/{rails,conformance}/**/*_spec.rb"
+end
+
+RSpec::Core::RakeTask.new(:rails_spec) do |task|
+  task.pattern = "spec/rails/**/*_spec.rb"
+end
+
+desc "Run core, Rack, and Rails specs"
+task spec: %i[core_spec rails_spec]
+
+desc "Run RuboCop"
+task :rubocop do
+  sh "bundle exec rubocop"
+end
+
+task default: %i[spec rubocop]

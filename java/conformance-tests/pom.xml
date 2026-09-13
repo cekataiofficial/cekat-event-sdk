@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>ai.cekat</groupId>
+    <artifactId>cekat-event-sdk-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>cekat-event-sdk-conformance-tests</artifactId>
+  <name>Cekat Event SDK Conformance Tests</name>
+  <description>Runs the shared conformance fixtures against the public Java API. Never published.</description>
+
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <maven.install.skip>true</maven.install.skip>
+    <cekat.conformance.baseUrl/>
+    <cekat.conformance.controlUrl/>
+    <cekat.conformance.accessToken/>
+    <cekat.conformance.fixtures/>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>ai.cekat</groupId>
+      <artifactId>cekat-event-sdk-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>tools.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson3.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.networknt</groupId>
+      <artifactId>json-schema-validator</artifactId>
+      <version>${json-schema-validator.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <cekat.conformance.baseUrl>${cekat.conformance.baseUrl}</cekat.conformance.baseUrl>
+            <cekat.conformance.controlUrl>${cekat.conformance.controlUrl}</cekat.conformance.controlUrl>
+            <cekat.conformance.accessToken>${cekat.conformance.accessToken}</cekat.conformance.accessToken>
+            <cekat.conformance.fixtures>${cekat.conformance.fixtures}</cekat.conformance.fixtures>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

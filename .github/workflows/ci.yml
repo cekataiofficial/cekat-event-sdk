@@ -197,10 +197,96 @@ jobs:
         working-directory: .
         run: scripts/conformance.sh --language php
 
+  ruby:
+    name: Ruby ${{ matrix.ruby-version }} (Rails ${{ matrix.rails }}, Rack ${{ matrix.rack }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ruby-version: '3.3'
+            rails: '8.0'
+            rack: '2.2'
+            # Rails 8.0 JSON rendering is incompatible with json 3.x.
+            json: '~> 2.7'
+          - ruby-version: '3.4'
+            rails: '8.1'
+            rack: '3.1'
+            json: '>= 2.7'
+          - ruby-version: '4.0'
+            rails: '8.1'
+            rack: '3.2'
+            json: '>= 2.7'
+    env:
+      RAILS_VERSION: '~> ${{ matrix.rails }}.0'
+      RACK_VERSION: '~> ${{ matrix.rack }}.0'
+      JSON_VERSION: ${{ matrix.json }}
+    defaults:
+      run:
+        working-directory: ruby
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - *build-mock-setup
+      - *build-mock
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          working-directory: ruby
+          bundler-cache: false
+      - name: Install gems
+        run: bundle install
+      - name: Specs (core, Rack, transport, Rails)
+        run: bundle exec rake spec
+      - name: RuboCop
+        run: bundle exec rubocop
+      - name: Security audit
+        if: matrix.ruby-version == '4.0'
+        run: bundle exec bundle-audit check --update
+      - name: Shared conformance
+        working-directory: .
+        run: scripts/conformance.sh --language ruby
+
+  java:
+    name: Java ${{ matrix.java-version }} (Spring Boot ${{ matrix.spring-boot }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - java-version: '17'
+            spring-boot: '4.0.8'
+          # JDK 21+ also runs Checkstyle and SpotBugs through the static-analysis profile.
+          - java-version: '25'
+            spring-boot: '4.1.1'
+    defaults:
+      run:
+        working-directory: java
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - *build-mock-setup
+      - *build-mock
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java-version }}
+          cache: maven
+          cache-dependency-path: java/**/pom.xml
+      - name: Build, test, and analyze
+        run: ./mvnw -B -ntp verify -Dspring-boot.version=${{ matrix.spring-boot }}
+      - name: Shared conformance
+        working-directory: .
+        run: scripts/conformance.sh --language java
+
   required:
     name: CI required
     if: always()
-    needs: [contract, go, node, php]
+    needs: [contract, go, node, php, ruby, java]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every job to succeed

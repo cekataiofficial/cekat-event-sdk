@@ -1,0 +1,46 @@
+#!/bin/sh
+# Builds verified local Maven artifacts and a SHA-256 manifest. It runs checks and builds only;
+# it never deploys, signs, tags, or pushes. Release owners handle distribution.
+set -eu
+
+VERSION=0.1.0
+usage() {
+  echo "$1" >&2
+  echo "usage: scripts/package --version $VERSION --output <absolute-empty-directory>" >&2
+  exit 2
+}
+
+[ "$#" -eq 4 ] && [ "$1" = "--version" ] && [ "$3" = "--output" ] || usage "expected exactly --version $VERSION --output <absolute-empty-directory>"
+[ "$2" = "$VERSION" ] || usage "only version $VERSION may be packaged"
+OUTPUT=$4
+case "$OUTPUT" in /*) ;; *) usage "output must be an absolute directory" ;; esac
+case "$OUTPUT/" in */./*|*/../*) usage "output must not contain traversal components" ;; esac
+if [ -e "$OUTPUT" ] || [ -L "$OUTPUT" ]; then
+  [ -d "$OUTPUT" ] && [ ! -L "$OUTPUT" ] || usage "output must be a non-symlink directory"
+  [ -z "$(ls -A "$OUTPUT")" ] || usage "output directory must be empty so stale artifacts cannot be packaged"
+else
+  mkdir -p "$OUTPUT"
+fi
+JAVA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OUTPUT="$(cd "$OUTPUT" && pwd -P)"
+case "$OUTPUT/" in "$JAVA_DIR"/*) usage "output must be outside the package working tree" ;; esac
+
+"$JAVA_DIR/mvnw" -f "$JAVA_DIR/pom.xml" -B -ntp clean verify
+
+copy() {
+  artifact=$1; source=$2; suffix=$3
+  directory="$OUTPUT/ai/cekat/$artifact/$VERSION"
+  mkdir -p "$directory"
+  cp "$source" "$directory/$artifact-$VERSION$suffix"
+}
+copy cekat-event-sdk-parent "$JAVA_DIR/pom.xml" .pom
+for artifact in cekat-event-sdk-core cekat-event-sdk-jakarta-servlet cekat-event-sdk-spring-boot; do
+  module="$JAVA_DIR/$artifact"
+  copy "$artifact" "$module/pom.xml" .pom
+  copy "$artifact" "$module/target/$artifact-$VERSION.jar" .jar
+  copy "$artifact" "$module/target/$artifact-$VERSION-sources.jar" -sources.jar
+  copy "$artifact" "$module/target/$artifact-$VERSION-javadoc.jar" -javadoc.jar
+done
+
+java "$JAVA_DIR/scripts/Manifest.java" "$OUTPUT" "$VERSION"
+echo "Prepared local $VERSION Java package artifacts in $OUTPUT"

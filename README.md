@@ -1,6 +1,6 @@
 # cekat-event-sdk
 
-Backend SDKs that submit Cekat events and correlate them with the browser visitor. Implemented: [Go](go/README.md), [Node.js](node/README.md), and [PHP](php/README.md).
+Backend SDKs that submit Cekat events and correlate them with the browser visitor. Implemented: [Go](go/README.md), [Node.js](node/README.md), [PHP](php/README.md), [Ruby](ruby/README.md), and [Java](java/README.md).
 
 ## Shared conformance
 
