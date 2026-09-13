@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+  <!-- Event's compact constructor stores an unmodifiable copy, so returning it cannot expose mutable state. -->
+  <Match>
+    <Class name="ai.cekat.events.Event"/>
+    <Method name="properties"/>
+    <Bug pattern="EI_EXPOSE_REP"/>
+  </Match>
+  <!-- HttpResponse.BodySubscriber#getBody must return the subscriber's own completion stage. -->
+  <Match>
+    <Class name="ai.cekat.events.transport.JdkHttpTransport$BoundedSubscriber"/>
+    <Method name="getBody"/>
+    <Bug pattern="EI_EXPOSE_REP"/>
+  </Match>
+  <!-- A body read failure is an exception object; sharing the throwable is intended. -->
+  <Match>
+    <Class name="ai.cekat.events.transport.TransportResponse"/>
+    <Field name="bodyReadFailure"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+</FindBugsFilter>

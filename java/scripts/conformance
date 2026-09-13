@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+[ "$#" -eq 0 ] || { echo "conformance accepts no positional arguments" >&2; exit 2; }
+required_env='CEKAT_CONFORMANCE_BASE_URL CEKAT_CONFORMANCE_CONTROL_URL CEKAT_CONFORMANCE_ACCESS_TOKEN CEKAT_CONFORMANCE_FIXTURES'
+missing=''
+for name in $required_env; do
+  eval "value=\${$name-}"
+  [ -n "$value" ] || missing="$missing $name"
+done
+[ -z "$missing" ] || { echo "missing required conformance inputs:$missing" >&2; exit 2; }
+for name in $(env | sed -n 's/^\(CEKAT_CONFORMANCE_[^=]*\)=.*/\1/p'); do
+  case " $required_env " in *" $name "*) ;; *) echo "unrecognized conformance environment variable: $name" >&2; exit 2 ;; esac
+done
+validate_origin() {
+  case "$1" in
+    http://*|https://*) ;;
+    *) echo "$2 must be an absolute pathless HTTP(S) origin" >&2; exit 2 ;;
+  esac
+  authority=${1#*://}
+  authority=${authority%/}
+  case "$authority" in
+    ''|*/*|*\?*|*\#*|*@*) echo "$2 must be an absolute pathless HTTP(S) origin" >&2; exit 2 ;;
+  esac
+}
+validate_origin "$CEKAT_CONFORMANCE_BASE_URL" CEKAT_CONFORMANCE_BASE_URL
+validate_origin "$CEKAT_CONFORMANCE_CONTROL_URL" CEKAT_CONFORMANCE_CONTROL_URL
+case "$CEKAT_CONFORMANCE_FIXTURES" in /*) ;; *) echo 'CEKAT_CONFORMANCE_FIXTURES must be absolute' >&2; exit 2;; esac
+[ -d "$CEKAT_CONFORMANCE_FIXTURES" ] && [ -r "$CEKAT_CONFORMANCE_FIXTURES" ] || { echo 'CEKAT_CONFORMANCE_FIXTURES must be an absolute readable directory' >&2; exit 2; }
+JAVA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$JAVA_DIR/mvnw" -f "$JAVA_DIR/pom.xml" -B -ntp -pl conformance-tests -am verify \
+  -Dtest=SharedConformanceTest -Dsurefire.failIfNoSpecifiedTests=false -Djacoco.skip=true -Dmaven.javadoc.skip=true \
+  -Dcekat.conformance.baseUrl="$CEKAT_CONFORMANCE_BASE_URL" \
+  -Dcekat.conformance.controlUrl="$CEKAT_CONFORMANCE_CONTROL_URL" \
+  -Dcekat.conformance.accessToken="$CEKAT_CONFORMANCE_ACCESS_TOKEN" \
+  -Dcekat.conformance.fixtures="$CEKAT_CONFORMANCE_FIXTURES"
