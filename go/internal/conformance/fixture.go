@@ -398,9 +398,10 @@ func recipeProperties(recipe string) map[string]any {
 		value["self"] = value
 		return value
 	case "non_string_key":
-		// encoding/json stringifies integer and TextMarshaler keys, so Go's
-		// non-representable key is a float.
-		return map[string]any{"value": map[float64]string{1: "one"}}
+		// encoding/json turns integer and TextMarshaler keys (and, since Go 1.27,
+		// float, interface, and pointer keys) into strings. A struct key cannot
+		// become a JSON object name in any supported Go release.
+		return map[string]any{"value": map[struct{ Key string }]string{{Key: "one"}: "one"}}
 	case "runtime_object":
 		// Structs, pointers, and marshalers have standard JSON forms in Go; a
 		// channel is the runtime object encoding/json cannot represent.
