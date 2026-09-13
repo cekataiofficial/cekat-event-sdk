@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-const defaultBaseURL = "https://server.cekat.ai"
+const (
+	defaultBaseURL = "https://server.cekat.ai"
+	defaultTimeout = 3 * time.Second
+)
 
 // Option configures a Client during construction.
 type Option func(*config) error
@@ -26,7 +29,7 @@ type config struct {
 func defaultConfig() config {
 	return config{
 		baseURL:    defaultBaseURL,
-		timeout:    10 * time.Second,
+		timeout:    defaultTimeout,
 		retryCount: 2,
 		httpClient: &http.Client{},
 		sleep:      defaultSleep,
@@ -62,7 +65,8 @@ func WithBaseURL(baseURL string) Option {
 	}
 }
 
-// WithTimeout sets the timeout applied to each network attempt.
+// WithTimeout sets the timeout applied to each network attempt. The default is
+// three seconds.
 func WithTimeout(timeout time.Duration) Option {
 	return func(cfg *config) error {
 		cfg.timeout = timeout

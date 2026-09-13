@@ -1,14 +1,22 @@
 package cekat
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
-	"reflect"
+	"strconv"
 	"strings"
+	"time"
 )
 
-const maxSafeInteger int64 = 9007199254740991
+const (
+	maxSafeInteger   int64 = 9007199254740991
+	occurredAtLayout       = "2006-01-02T15:04:05.000Z"
+)
 
 // validateEvent applies the stable event rules before any delivery is attempted.
 func validateEvent(eventKey string, event Event) error {
@@ -18,105 +26,74 @@ func validateEvent(eventKey string, event Event) error {
 	if strings.TrimSpace(event.Email) == "" && strings.TrimSpace(event.PhoneNumber) == "" {
 		return &ValidationError{Message: "event must include a non-blank email or phone number"}
 	}
-	if err := validateProperties(event.Properties); err != nil {
-		return err
+	if !event.OccurredAt.IsZero() {
+		if year := event.OccurredAt.UTC().Year(); year < 1 || year > 9999 {
+			return &ValidationError{Message: "occurred at must be between years 0001 and 9999"}
+		}
 	}
 	return nil
 }
 
-func validateProperties(properties map[string]any) error {
+// normalizeProperties encodes properties with encoding/json so values use their
+// standard JSON representation, then verifies the result is portable JSON. The
+// returned map snapshots the caller's values at call time.
+func normalizeProperties(properties map[string]any) (map[string]any, error) {
 	if properties == nil {
-		return nil
+		return nil, nil
 	}
-	return validateJSONValue(reflect.ValueOf(properties), "properties", make(map[visit]struct{}))
+	encoded, err := json.Marshal(properties)
+	if err != nil {
+		return nil, &ValidationError{Message: "properties is not a JSON-compatible value: " + err.Error()}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	var normalized map[string]any
+	if err := decoder.Decode(&normalized); err != nil {
+		return nil, &ValidationError{Message: "properties is not a JSON-compatible value: " + err.Error()}
+	}
+	for key, value := range normalized {
+		if err := validatePortableJSON(value, propertyPath("properties", key)); err != nil {
+			return nil, err
+		}
+	}
+	return normalized, nil
 }
 
-type visit struct {
-	typ reflect.Type
-	ptr uintptr
-}
-
-func validateJSONValue(value reflect.Value, path string, ancestors map[visit]struct{}) error {
-	if !value.IsValid() {
-		return nil
-	}
-
-	switch value.Kind() {
-	case reflect.Interface:
-		if value.IsNil() {
-			return nil
-		}
-		return validateJSONValue(value.Elem(), path, ancestors)
-	case reflect.Bool, reflect.String:
-		return nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if isUnsafeInteger(value.Int()) {
+// validatePortableJSON rejects numbers that other JSON implementations cannot
+// represent exactly. Decoded values are only json.Number, strings, booleans, nil,
+// []any, and map[string]any.
+func validatePortableJSON(value any, path string) error {
+	switch typed := value.(type) {
+	case json.Number:
+		if !portableNumber(typed.String()) {
 			return invalidJSONValue(path)
 		}
-		return nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if value.Uint() > uint64(maxSafeInteger) {
-			return invalidJSONValue(path)
-		}
-		return nil
-	case reflect.Float32, reflect.Float64:
-		number := value.Float()
-		if math.IsNaN(number) || math.IsInf(number, 0) || (number == math.Trunc(number) && (number < -float64(maxSafeInteger) || number > float64(maxSafeInteger))) {
-			return invalidJSONValue(path)
-		}
-		return nil
-	case reflect.Map:
-		if value.IsNil() {
-			return nil
-		}
-		if value.Type().Key().Kind() != reflect.String {
-			return invalidJSONValue(path)
-		}
-		return withContainer(value, path, ancestors, func() error {
-			iter := value.MapRange()
-			for iter.Next() {
-				if err := validateJSONValue(iter.Value(), propertyPath(path, iter.Key().String()), ancestors); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-	case reflect.Slice:
-		if value.IsNil() {
-			return nil
-		}
-		return withContainer(value, path, ancestors, func() error {
-			for index := 0; index < value.Len(); index++ {
-				if err := validateJSONValue(value.Index(index), fmt.Sprintf("%s[%d]", path, index), ancestors); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-	case reflect.Array:
-		for index := 0; index < value.Len(); index++ {
-			if err := validateJSONValue(value.Index(index), fmt.Sprintf("%s[%d]", path, index), ancestors); err != nil {
+	case []any:
+		for index, item := range typed {
+			if err := validatePortableJSON(item, fmt.Sprintf("%s[%d]", path, index)); err != nil {
 				return err
 			}
 		}
-		return nil
-	default:
-		return invalidJSONValue(path)
+	case map[string]any:
+		for key, item := range typed {
+			if err := validatePortableJSON(item, propertyPath(path, key)); err != nil {
+				return err
+			}
+		}
 	}
+	return nil
 }
 
-func withContainer(value reflect.Value, path string, ancestors map[visit]struct{}, validate func() error) error {
-	identity := visit{typ: value.Type(), ptr: value.Pointer()}
-	if _, seen := ancestors[identity]; seen {
-		return &ValidationError{Message: path + " contains a cycle"}
+func portableNumber(literal string) bool {
+	if !strings.ContainsAny(literal, ".eE") {
+		number, err := strconv.ParseInt(literal, 10, 64)
+		return err == nil && number >= -maxSafeInteger && number <= maxSafeInteger
 	}
-	ancestors[identity] = struct{}{}
-	defer delete(ancestors, identity)
-	return validate()
-}
-
-func isUnsafeInteger(number int64) bool {
-	return number < -maxSafeInteger || number > maxSafeInteger
+	number, err := strconv.ParseFloat(literal, 64)
+	if err != nil || math.IsInf(number, 0) || math.IsNaN(number) {
+		return false
+	}
+	return number != math.Trunc(number) || math.Abs(number) <= float64(maxSafeInteger)
 }
 
 func invalidJSONValue(path string) error {
@@ -135,7 +112,7 @@ func buildPayload(ctx context.Context, eventKey string, isCommon bool, event Eve
 		return wirePayload{}, err
 	}
 
-	properties, err := copyProperties(event.Properties)
+	properties, err := normalizeProperties(event.Properties)
 	if err != nil {
 		return wirePayload{}, err
 	}
@@ -143,9 +120,19 @@ func buildPayload(ctx context.Context, eventKey string, isCommon bool, event Eve
 	if visitorID == "" {
 		visitorID, _ = VisitorIDFromContext(ctx)
 	}
+	eventID := strings.TrimSpace(event.EventID)
+	if eventID == "" {
+		eventID = newEventID()
+	}
+	occurredAt := event.OccurredAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now()
+	}
 
 	return wirePayload{
 		EventKey:    eventKey,
+		EventID:     eventID,
+		OccurredAt:  occurredAt.UTC().Format(occurredAtLayout),
 		ContactName: event.ContactName,
 		PhoneNumber: event.PhoneNumber,
 		Email:       event.Email,
@@ -155,91 +142,23 @@ func buildPayload(ctx context.Context, eventKey string, isCommon bool, event Eve
 	}, nil
 }
 
-func copyProperties(properties map[string]any) (map[string]any, error) {
-	if properties == nil {
-		return nil, nil
+// newEventID returns a lowercase random (version 4) UUID.
+func newEventID() string {
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		panic("cekat: crypto/rand failed: " + err.Error())
 	}
-	copied, err := copyJSONValue(reflect.ValueOf(properties), make(map[visit]struct{}))
-	if err != nil {
-		return nil, err
-	}
-	return copied.(map[string]any), nil
-}
-
-// copyJSONValue converts validated values to built-in types so encoding/json cannot
-// apply named-type or []byte-specific serialization rules.
-func copyJSONValue(value reflect.Value, ancestors map[visit]struct{}) (any, error) {
-	if !value.IsValid() {
-		return nil, nil
-	}
-	if value.Kind() == reflect.Interface {
-		if value.IsNil() {
-			return nil, nil
-		}
-		return copyJSONValue(value.Elem(), ancestors)
-	}
-
-	switch value.Kind() {
-	case reflect.Bool:
-		return value.Bool(), nil
-	case reflect.String:
-		return value.String(), nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return value.Int(), nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return int64(value.Uint()), nil
-	case reflect.Float32, reflect.Float64:
-		return value.Float(), nil
-	case reflect.Map:
-		if value.IsNil() {
-			return nil, nil
-		}
-		identity := visit{typ: value.Type(), ptr: value.Pointer()}
-		if _, seen := ancestors[identity]; seen {
-			return nil, &ValidationError{Message: "properties contains a cycle"}
-		}
-		ancestors[identity] = struct{}{}
-		defer delete(ancestors, identity)
-		copied := make(map[string]any, value.Len())
-		iter := value.MapRange()
-		for iter.Next() {
-			entry, err := copyJSONValue(iter.Value(), ancestors)
-			if err != nil {
-				return nil, err
-			}
-			copied[iter.Key().String()] = entry
-		}
-		return copied, nil
-	case reflect.Slice:
-		if value.IsNil() {
-			return nil, nil
-		}
-		identity := visit{typ: value.Type(), ptr: value.Pointer()}
-		if _, seen := ancestors[identity]; seen {
-			return nil, &ValidationError{Message: "properties contains a cycle"}
-		}
-		ancestors[identity] = struct{}{}
-		defer delete(ancestors, identity)
-		copied := make([]any, value.Len())
-		for index := 0; index < value.Len(); index++ {
-			entry, err := copyJSONValue(value.Index(index), ancestors)
-			if err != nil {
-				return nil, err
-			}
-			copied[index] = entry
-		}
-		return copied, nil
-	case reflect.Array:
-		copied := make([]any, value.Len())
-		for index := 0; index < value.Len(); index++ {
-			entry, err := copyJSONValue(value.Index(index), ancestors)
-			if err != nil {
-				return nil, err
-			}
-			copied[index] = entry
-		}
-		return copied, nil
-	default:
-		return nil, invalidJSONValue("properties")
-	}
+	id[6] = (id[6] & 0x0f) | 0x40
+	id[8] = (id[8] & 0x3f) | 0x80
+	var text [36]byte
+	hex.Encode(text[0:8], id[0:4])
+	text[8] = '-'
+	hex.Encode(text[9:13], id[4:6])
+	text[13] = '-'
+	hex.Encode(text[14:18], id[6:8])
+	text[18] = '-'
+	hex.Encode(text[19:23], id[8:10])
+	text[23] = '-'
+	hex.Encode(text[24:], id[10:])
+	return string(text[:])
 }

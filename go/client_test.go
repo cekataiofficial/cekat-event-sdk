@@ -180,8 +180,11 @@ func TestClientRequestConstructionAndResponseClose(t *testing.T) {
 		if got := request.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type = %q, want application/json", got)
 		}
-		if deadline, ok := request.Context().Deadline(); !ok || time.Until(deadline) > 10*time.Second || time.Until(deadline) < 9*time.Second {
-			t.Errorf("attempt deadline = %v (present %t), want approximately 10 seconds", deadline, ok)
+		if got, want := request.Header.Get("User-Agent"), "cekat-event-sdk-go/"+Version+" "; !strings.HasPrefix(got, want) {
+			t.Errorf("User-Agent = %q, want prefix %q", got, want)
+		}
+		if deadline, ok := request.Context().Deadline(); !ok || time.Until(deadline) > 3*time.Second || time.Until(deadline) < 2*time.Second {
+			t.Errorf("attempt deadline = %v (present %t), want approximately 3 seconds", deadline, ok)
 		}
 		body = &closingBody{Reader: strings.NewReader(canonicalSuccess)}
 		return &http.Response{StatusCode: http.StatusOK, Body: body, Header: make(http.Header), Request: request}, nil
@@ -234,9 +237,9 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 			}
 
 			_, err = client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
-			var apiErr *ApiError
+			var apiErr *APIError
 			if !errors.As(err, &apiErr) || apiErr.StatusCode != status || apiErr.Attempts != 1 {
-				t.Errorf("OrderPaid() error = %#v, want known-outcome *ApiError for status %d on attempt 1", err, status)
+				t.Errorf("OrderPaid() error = %#v, want known-outcome *APIError for status %d on attempt 1", err, status)
 			}
 			if initialRequests != 1 || redirectTargetRequests != 0 {
 				t.Errorf("requests initial=%d target=%d, want initial=1 target=0", initialRequests, redirectTargetRequests)

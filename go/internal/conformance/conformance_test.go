@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	cekat "github.com/cekataiofficial/cekat-event-sdk-go"
+	"github.com/cekataiofficial/cekat-event-sdk-go/internal/retryobserver"
 )
 
 func TestSharedConformance(t *testing.T) {
@@ -148,13 +150,23 @@ func runFixture(t *testing.T, f fixture, baseURL, token string, control *control
 	if f.Operation.Event.VisitorID != nil {
 		event.VisitorID = *f.Operation.Event.VisitorID
 	}
+	if f.Operation.Event.EventID != nil {
+		event.EventID = *f.Operation.Event.EventID
+	}
+	if f.Operation.Event.OccurredAt != nil {
+		occurredAt, err := time.Parse(time.RFC3339Nano, *f.Operation.Event.OccurredAt)
+		if err != nil {
+			t.Fatalf("fixture occurred_at: %v", err)
+		}
+		event.OccurredAt = occurredAt
+	}
 	if f.Operation.PropertiesRecipe != nil {
 		event.Properties = recipeProperties(*f.Operation.PropertiesRecipe)
 	}
 	var delays []time.Duration
-	if len(f.Expect.JitterBounds) > 0 {
+	if len(f.Expect.JitterBounds) > 0 || len(f.Expect.MinimumDelays) > 0 {
 		var delaysMu sync.Mutex
-		ctx = cekat.WithRetryDelayObserver(ctx, func(delay time.Duration) {
+		ctx = retryobserver.With(ctx, func(delay time.Duration) {
 			delaysMu.Lock()
 			delays = append(delays, delay)
 			delaysMu.Unlock()
@@ -164,17 +176,22 @@ func runFixture(t *testing.T, f fixture, baseURL, token string, control *control
 	if f.Cancellation != nil && f.Cancellation.Phase == "during_request" {
 		stopPolling = cancelWhenJournaled(control, cancel)
 	}
+	started := time.Now()
 	ack, gotErr := dispatch(client, ctx, f.Operation, event)
+	finished := time.Now()
 	if stopPolling != nil {
 		stopPolling()
 	}
 	assertResult(t, f, ack, gotErr)
-	assertJitterBounds(t, f, delays)
+	if len(f.Expect.JitterBounds) > 0 {
+		assertJitterBounds(t, f, delays)
+	}
+	assertMinimumDelays(t, f, delays)
 	requests, err := control.requests()
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertJournal(t, f, requests)
+	assertJournal(t, f, requests, started, finished)
 }
 
 type cancelOnFirst500 struct {
@@ -262,7 +279,7 @@ func assertResult(t *testing.T, f fixture, ack *cekat.Acknowledgement, err error
 			t.Fatalf("caller cancellation = %T %v", err, err)
 		}
 		switch err.(type) {
-		case *cekat.ValidationError, *cekat.TransportError, *cekat.ResponseDecodeError, *cekat.ApiError, *cekat.AuthenticationError, *cekat.EventDefinitionNotFoundError:
+		case *cekat.ValidationError, *cekat.TransportError, *cekat.ResponseDecodeError, *cekat.APIError, *cekat.AuthenticationError, *cekat.EventDefinitionNotFoundError:
 			t.Fatalf("caller cancellation wrapped by SDK error: %T", err)
 		}
 		return
@@ -296,10 +313,10 @@ func assertResult(t *testing.T, f fixture, ack *cekat.Acknowledgement, err error
 	var attempts int
 	var body []byte
 	switch value := err.(type) {
-	case *cekat.ApiError:
+	case *cekat.APIError:
 		status, message, serverError, serverCode, attempts, body = value.StatusCode, value.Message, value.Message, value.Code, value.Attempts, value.Body
 		if f.Expect.Result != "api_error" {
-			t.Fatalf("error type = ApiError, want %s", f.Expect.Result)
+			t.Fatalf("error type = APIError, want %s", f.Expect.Result)
 		}
 	case *cekat.AuthenticationError:
 		status, message, serverError, serverCode, attempts, body = value.StatusCode, value.Message, value.Message, value.Code, value.Attempts, value.Body
@@ -356,6 +373,36 @@ func assertJitterBounds(t *testing.T, f fixture, delays []time.Duration) {
 		}
 	}
 }
+func assertGeneratedField(t *testing.T, index int, field, value string, started, finished time.Time) {
+	t.Helper()
+	switch field {
+	case "event_id":
+		if !generatedEventIDPattern.MatchString(value) {
+			t.Fatalf("journal[%d] event_id = %q, want generated lowercase v4 UUID", index, value)
+		}
+	case "occurred_at":
+		occurredAt, err := time.Parse("2006-01-02T15:04:05.000Z", value)
+		if err != nil || occurredAt.Before(started.Add(-time.Second)) || occurredAt.After(finished.Add(time.Second)) {
+			t.Fatalf("journal[%d] occurred_at = %q (%v), want canonical UTC milliseconds within the case window", index, value, err)
+		}
+	}
+}
+
+func assertMinimumDelays(t *testing.T, f fixture, delays []time.Duration) {
+	t.Helper()
+	if len(f.Expect.MinimumDelays) == 0 {
+		return
+	}
+	if len(delays) != len(f.Expect.MinimumDelays) {
+		t.Fatalf("observed %d retry delays, want %d", len(delays), len(f.Expect.MinimumDelays))
+	}
+	for index, minimum := range f.Expect.MinimumDelays {
+		if want := time.Duration(minimum) * time.Millisecond; delays[index] < want {
+			t.Fatalf("retry delay[%d] = %s, want at least %s", index, delays[index], want)
+		}
+	}
+}
+
 func assertBody(t *testing.T, f fixture, body []byte) {
 	t.Helper()
 	if f.Expect.RetainedBodyBytes != nil && len(body) != *f.Expect.RetainedBodyBytes {
@@ -390,18 +437,30 @@ func assertBody(t *testing.T, f fixture, body []byte) {
 		t.Fatalf("truncated text body does not include replacement character")
 	}
 }
-func assertJournal(t *testing.T, f fixture, requests []journalEntry) {
+
+var (
+	generatedEventIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	userAgentPattern        = regexp.MustCompile(`^cekat-event-sdk-go/[0-9]+\.[0-9]+\.[0-9]+[^ ]*( .+)?$`)
+)
+
+func assertJournal(t *testing.T, f fixture, requests []journalEntry, started, finished time.Time) {
 	t.Helper()
 	if len(requests) != f.Expect.Attempts {
 		t.Fatalf("journal length = %d, want %d", len(requests), f.Expect.Attempts)
 	}
+	for index, request := range requests {
+		if values := request.Headers["user-agent"]; len(values) != 1 || !userAgentPattern.MatchString(values[0]) {
+			t.Fatalf("journal[%d] user-agent = %#v, want cekat-event-sdk-go/<semver>", index, values)
+		}
+	}
 	if f.Expect.Request == nil {
 		return
 	}
-	var expected any
+	var expected map[string]any
 	if err := json.Unmarshal(f.Expect.Request.Payload, &expected); err != nil {
 		t.Fatal(err)
 	}
+	generated := map[string]string{}
 	for index, request := range requests {
 		if request.Sequence != index+1 || request.Method != http.MethodPost || request.Path != f.Expect.Request.Path {
 			t.Fatalf("journal[%d] = %#v", index, request)
@@ -409,9 +468,21 @@ func assertJournal(t *testing.T, f fixture, requests []journalEntry) {
 		if values := request.Headers["authorization"]; !reflect.DeepEqual(values, []string{f.Expect.Request.Authorization}) {
 			t.Fatalf("journal[%d] authorization = %#v", index, values)
 		}
-		var actual any
+		var actual map[string]any
 		if err := json.Unmarshal([]byte(request.Body), &actual); err != nil {
 			t.Fatalf("journal[%d] JSON: %v", index, err)
+		}
+		for _, field := range []string{"event_id", "occurred_at"} {
+			if _, declared := expected[field]; declared {
+				continue
+			}
+			value, _ := actual[field].(string)
+			assertGeneratedField(t, index, field, value, started, finished)
+			if previous, seen := generated[field]; seen && previous != value {
+				t.Fatalf("journal[%d] %s = %q, want %q reused across attempts", index, field, value, previous)
+			}
+			generated[field] = value
+			delete(actual, field)
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Fatalf("journal[%d] payload = %#v, want %#v", index, actual, expected)

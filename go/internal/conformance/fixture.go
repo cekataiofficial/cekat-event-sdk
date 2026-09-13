@@ -53,6 +53,8 @@ type eventRecipe struct {
 	PhoneNumber *string        `json:"phone_number"`
 	ContactName *string        `json:"contact_name"`
 	VisitorID   *string        `json:"visitor_id"`
+	EventID     *string        `json:"event_id"`
+	OccurredAt  *string        `json:"occurred_at"`
 	Properties  map[string]any `json:"properties"`
 }
 type mockResponse struct {
@@ -61,6 +63,8 @@ type mockResponse struct {
 	Body       string            `json:"body"`
 	DelayMS    *int              `json:"delay_ms,omitempty"`
 	Disconnect *bool             `json:"disconnect_before_headers,omitempty"`
+	// DisconnectAfter interrupts the response body after headers are sent.
+	DisconnectAfter *bool `json:"disconnect_after_headers,omitempty"`
 }
 type bodyRecipe struct {
 	Unit         string `json:"unit"`
@@ -83,6 +87,7 @@ type expectation struct {
 	ObservedBodyBytes *int             `json:"observed_body_bytes"`
 	BodyTruncated     *bool            `json:"body_truncated"`
 	Request           *expectedRequest `json:"request"`
+	MinimumDelays     []int            `json:"minimum_retry_delays_ms"`
 	JitterBounds      [][]int          `json:"jitter_bounds_ms"`
 }
 type ackExpectation struct {
@@ -205,10 +210,10 @@ func validateFixtureShape(data []byte) error {
 	}
 	var operation map[string]json.RawMessage
 	_ = json.Unmarshal(root["operation"], &operation)
-	if err := checkObject(operation["event"], []string{"email", "phone_number", "contact_name", "visitor_id", "properties"}, nil); err != nil {
+	if err := checkObject(operation["event"], []string{"email", "phone_number", "contact_name", "visitor_id", "event_id", "occurred_at", "properties"}, nil); err != nil {
 		return fmt.Errorf("operation.event: %w", err)
 	}
-	if err := checkObject(root["expect"], []string{"result", "attempts", "delivery_outcome_unknown", "acknowledgement", "status", "error_message", "server_error", "server_code", "retained_body_bytes", "observed_body_bytes", "body_truncated", "request", "jitter_bounds_ms"}, []string{"result", "attempts"}); err != nil {
+	if err := checkObject(root["expect"], []string{"result", "attempts", "delivery_outcome_unknown", "acknowledgement", "status", "error_message", "server_error", "server_code", "retained_body_bytes", "observed_body_bytes", "body_truncated", "request", "minimum_retry_delays_ms", "jitter_bounds_ms"}, []string{"result", "attempts"}); err != nil {
 		return fmt.Errorf("expect: %w", err)
 	}
 	var expect map[string]json.RawMessage
@@ -236,7 +241,7 @@ func validateFixtureShape(data []byte) error {
 			return fmt.Errorf("responses must be an array")
 		}
 		for i, response := range responses {
-			if err := checkObject(response, []string{"status", "headers", "body", "delay_ms", "disconnect_before_headers"}, []string{"body"}); err != nil {
+			if err := checkObject(response, []string{"status", "headers", "body", "delay_ms", "disconnect_before_headers", "disconnect_after_headers"}, []string{"body"}); err != nil {
 				return fmt.Errorf("responses[%d]: %w", i, err)
 			}
 		}
@@ -340,6 +345,9 @@ func validateMockResponse(r mockResponse) error {
 	if r.Status == nil || *r.Status < 200 || *r.Status > 599 {
 		return fmt.Errorf("invalid mock-response form")
 	}
+	if r.Disconnect != nil && r.DisconnectAfter != nil && *r.DisconnectAfter {
+		return fmt.Errorf("invalid mock-response form")
+	}
 	if r.DelayMS != nil && *r.DelayMS < 0 {
 		return fmt.Errorf("invalid mock-response form")
 	}
@@ -388,9 +396,13 @@ func recipeProperties(recipe string) map[string]any {
 		value["self"] = value
 		return value
 	case "non_string_key":
-		return map[string]any{"value": map[int]string{1: "one"}}
+		// encoding/json stringifies integer and TextMarshaler keys, so Go's
+		// non-representable key is a float.
+		return map[string]any{"value": map[float64]string{1: "one"}}
 	case "runtime_object":
-		return map[string]any{"value": struct{ Value string }{"runtime"}}
+		// Structs, pointers, and marshalers have standard JSON forms in Go; a
+		// channel is the runtime object encoding/json cannot represent.
+		return map[string]any{"value": make(chan int)}
 	default:
 		panic("validated recipe")
 	}

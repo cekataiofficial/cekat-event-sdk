@@ -64,26 +64,25 @@ func prepare(version, output, moduleRoot string) error {
 	if err != nil {
 		return err
 	}
-	archiveName := fmt.Sprintf("cekat-event-sdk-go-v%s.zip", version)
-	archivePath := filepath.Join(output, archiveName)
-	if err := writeArchive(archivePath, moduleRoot, version, files); err != nil {
-		return err
-	}
-	contents, err := os.ReadFile(archivePath)
-	if err != nil {
-		return fmt.Errorf("read completed archive: %w", err)
-	}
-	digest := sha256.Sum256(contents)
-	manifest := packageManifest{
-		SchemaVersion: 1,
-		Language:      "go",
-		Version:       version,
-		Artifacts: []manifestArtifact{{
+	manifest := packageManifest{SchemaVersion: 1, Language: "go", Version: version}
+	for _, module := range publishableModules(files) {
+		archiveName := fmt.Sprintf("%s-v%s.zip", module.archiveStem(), version)
+		archivePath := filepath.Join(output, archiveName)
+		if err := writeArchive(archivePath, moduleRoot, module, version); err != nil {
+			return err
+		}
+		contents, err := os.ReadFile(archivePath)
+		if err != nil {
+			return fmt.Errorf("read completed archive: %w", err)
+		}
+		digest := sha256.Sum256(contents)
+		manifest.Artifacts = append(manifest.Artifacts, manifestArtifact{
 			Path:      archiveName,
 			SHA256:    hex.EncodeToString(digest[:]),
 			SizeBytes: int64(len(contents)),
-		}},
+		})
 	}
+	sort.Slice(manifest.Artifacts, func(i, j int) bool { return manifest.Artifacts[i].Path < manifest.Artifacts[j].Path })
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode manifest: %w", err)
@@ -92,6 +91,64 @@ func prepare(version, output, moduleRoot string) error {
 		return fmt.Errorf("write manifest: %w", err)
 	}
 	return nil
+}
+
+// moduleSource is one Go module inside the repository and the tracked files it owns.
+type moduleSource struct {
+	dir   string // slash-separated directory relative to the root module; "" for the root
+	files []string
+}
+
+func (m moduleSource) path() string {
+	if m.dir == "" {
+		return modulePath
+	}
+	return modulePath + "/" + m.dir
+}
+
+func (m moduleSource) archiveStem() string {
+	if m.dir == "" {
+		return "cekat-event-sdk-go"
+	}
+	return "cekat-event-sdk-go-" + strings.ReplaceAll(m.dir, "/", "-")
+}
+
+// publishableModules assigns each tracked file to its innermost Go module, as
+// Go module zips do, and omits modules under internal/, which are never published.
+func publishableModules(files []string) []moduleSource {
+	dirs := []string{""}
+	for _, file := range files {
+		if dir, name := splitSlashPath(file); name == "go.mod" && dir != "" {
+			dirs = append(dirs, dir)
+		}
+	}
+	owned := make(map[string][]string, len(dirs))
+	for _, file := range files {
+		owner := ""
+		for _, dir := range dirs {
+			if dir != "" && strings.HasPrefix(file, dir+"/") && len(dir) > len(owner) {
+				owner = dir
+			}
+		}
+		owned[owner] = append(owned[owner], strings.TrimPrefix(file, owner+"/"))
+	}
+	modules := make([]moduleSource, 0, len(dirs))
+	for _, dir := range dirs {
+		if dir == "internal" || strings.HasPrefix(dir, "internal/") || len(owned[dir]) == 0 {
+			continue
+		}
+		modules = append(modules, moduleSource{dir: dir, files: owned[dir]})
+	}
+	sort.Slice(modules, func(i, j int) bool { return modules[i].dir < modules[j].dir })
+	return modules
+}
+
+func splitSlashPath(file string) (dir, name string) {
+	index := strings.LastIndex(file, "/")
+	if index < 0 {
+		return "", file
+	}
+	return file[:index], file[index+1:]
 }
 
 func validateOutput(output string) error {
@@ -167,8 +224,10 @@ func excludedSourcePath(file string) bool {
 // allowedSourcePath admits only source, module metadata, documentation, and the
 // two tracked local wrappers. New artifact file types must be deliberately added.
 func allowedSourcePath(file string) bool {
-	if file == "go.mod" || file == "go.sum" || file == "README.md" || file == "COMPATIBILITY.md" ||
-		file == "scripts/package" || file == "scripts/conformance" {
+	if file == "README.md" || file == "COMPATIBILITY.md" || file == "scripts/package" || file == "scripts/conformance" {
+		return true
+	}
+	if _, name := splitSlashPath(file); name == "go.mod" || name == "go.sum" {
 		return true
 	}
 	return strings.HasSuffix(file, ".go")
@@ -196,14 +255,15 @@ func safeRelativePath(path string) bool {
 	return true
 }
 
-func writeArchive(archivePath, moduleRoot, version string, files []string) error {
+func writeArchive(archivePath, repositoryRoot string, module moduleSource, version string) error {
 	archive, err := os.OpenFile(archivePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return fmt.Errorf("create archive: %w", err)
 	}
 	writer := zip.NewWriter(archive)
-	root := modulePath + "@v" + version + "/"
-	for _, file := range files {
+	root := module.path() + "@v" + version + "/"
+	moduleRoot := filepath.Join(repositoryRoot, filepath.FromSlash(module.dir))
+	for _, file := range module.files {
 		if err := addArchiveFile(writer, root+file, filepath.Join(moduleRoot, filepath.FromSlash(file))); err != nil {
 			writer.Close()
 			archive.Close()

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 type namedBool bool
@@ -23,82 +25,77 @@ func (value namedJSONMarshaler) MarshalJSON() ([]byte, error) {
 	return json.Marshal("marshaler escape: " + string(value))
 }
 
-func TestValidateEvent(t *testing.T) {
-	validEvent := Event{
-		Email: " ada@example.test ",
-		Properties: map[string]any{
-			"order": map[string]any{
-				"total": 12.5,
-				"items": []any{nil, true, "sku", int64(9007199254740991)},
-			},
-		},
-	}
+// textID mirrors identifier types such as github.com/google/uuid.UUID: a byte
+// array that serializes through encoding.TextMarshaler.
+type textID [4]byte
 
-	tests := []struct {
+func (id textID) MarshalText() ([]byte, error) {
+	return []byte("id-01020304"), nil
+}
+
+func TestValidateEvent(t *testing.T) {
+	for _, tt := range []struct {
 		name     string
 		eventKey string
 		event    Event
-		wantPath string
+		wantText string
 	}{
-		{name: "blank event key", eventKey: " \t", event: validEvent, wantPath: "event key"},
-		{name: "missing identities", eventKey: "order_paid", event: Event{Email: " \n ", PhoneNumber: "\t"}, wantPath: "email or phone number"},
-		{name: "NaN", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"risk": math.NaN()}}, wantPath: "properties.risk"},
-		{name: "positive infinity", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"risk": math.Inf(1)}}, wantPath: "properties.risk"},
-		{name: "negative infinity", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"risk": math.Inf(-1)}}, wantPath: "properties.risk"},
-		{name: "unsafe positive integer", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": int64(9007199254740992)}}, wantPath: "properties.id"},
-		{name: "unsafe negative integer", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": int64(-9007199254740992)}}, wantPath: "properties.id"},
-		{name: "unsafe positive integral float", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": float64(9007199254740992)}}, wantPath: "properties.id"},
-		{name: "unsafe negative integral float", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"id": float64(-9007199254740992)}}, wantPath: "properties.id"},
-		{name: "function", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": func() {}}}, wantPath: "properties.secret"},
-		{name: "channel", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": make(chan int)}}, wantPath: "properties.secret"},
-		{name: "complex", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": complex(1, 2)}}, wantPath: "properties.secret"},
-		{name: "struct", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": struct{ Value string }{Value: "very-secret"}}}, wantPath: "properties.secret"},
-		{name: "pointer", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"secret": new(string)}}, wantPath: "properties.secret"},
-		{name: "nested non-string map key", eventKey: "order_paid", event: Event{Email: "ada@example.test", Properties: map[string]any{"order": map[int]any{1: "very-secret"}}}, wantPath: "properties.order"},
-	}
-
-	for _, tt := range tests {
+		{name: "blank event key", eventKey: " \t", event: Event{Email: "ada@example.test"}, wantText: "event key"},
+		{name: "missing identities", eventKey: "order_paid", event: Event{Email: " \n ", PhoneNumber: "\t"}, wantText: "email or phone number"},
+		{name: "occurred at before year one", eventKey: "order_paid", event: Event{Email: "ada@example.test", OccurredAt: time.Date(0, 1, 1, 0, 0, 0, 0, time.UTC)}, wantText: "occurred at"},
+		{name: "occurred at after year 9999", eventKey: "order_paid", event: Event{Email: "ada@example.test", OccurredAt: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)}, wantText: "occurred at"},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateEvent(tt.eventKey, tt.event)
-			if err == nil {
-				t.Fatal("validateEvent() error = nil, want validation error")
-			}
 			var validationErr *ValidationError
-			if !errors.As(err, &validationErr) {
-				t.Fatalf("validateEvent() error type = %T, want *ValidationError", err)
-			}
-			if !strings.Contains(err.Error(), tt.wantPath) {
-				t.Errorf("validateEvent() error = %q, want path %q", err, tt.wantPath)
-			}
-			if strings.Contains(err.Error(), "very-secret") {
-				t.Fatalf("validateEvent() error leaked rejected property value: %q", err)
+			if !errors.As(err, &validationErr) || !strings.Contains(err.Error(), tt.wantText) {
+				t.Fatalf("validateEvent() error = %v, want *ValidationError mentioning %q", err, tt.wantText)
 			}
 		})
 	}
-
-	if err := validateEvent("order_paid", validEvent); err != nil {
-		t.Fatalf("validateEvent() valid nested event error = %v", err)
+	if err := validateEvent("order_paid", Event{PhoneNumber: "+6281"}); err != nil {
+		t.Fatalf("validateEvent() valid event error = %v", err)
 	}
 }
 
-func TestValidateEventRejectsCycles(t *testing.T) {
+func TestBuildPayloadRejectsNonPortableProperties(t *testing.T) {
 	mapCycle := map[string]any{}
 	mapCycle["self"] = mapCycle
-
 	sliceCycle := []any{nil}
 	sliceCycle[0] = sliceCycle
 
 	for _, tt := range []struct {
 		name       string
 		properties map[string]any
+		wantText   string
 	}{
-		{name: "map", properties: mapCycle},
-		{name: "slice", properties: map[string]any{"items": sliceCycle}},
+		{name: "NaN", properties: map[string]any{"risk": math.NaN()}, wantText: "properties"},
+		{name: "positive infinity", properties: map[string]any{"risk": math.Inf(1)}, wantText: "properties"},
+		{name: "negative infinity", properties: map[string]any{"risk": math.Inf(-1)}, wantText: "properties"},
+		{name: "unsafe positive integer", properties: map[string]any{"id": int64(9007199254740992)}, wantText: "properties.id"},
+		{name: "unsafe negative integer", properties: map[string]any{"id": int64(-9007199254740992)}, wantText: "properties.id"},
+		{name: "unsafe unsigned integer", properties: map[string]any{"id": uint64(math.MaxUint64)}, wantText: "properties.id"},
+		{name: "unsafe positive integral float", properties: map[string]any{"id": float64(9007199254740992)}, wantText: "properties.id"},
+		{name: "unsafe negative integral float", properties: map[string]any{"id": float64(-9007199254740992)}, wantText: "properties.id"},
+		{name: "nested unsafe integer", properties: map[string]any{"order": map[string]any{"items": []any{int64(1), int64(1 << 60)}}}, wantText: "properties.order.items[1]"},
+		{name: "function", properties: map[string]any{"secret": func() {}}, wantText: "properties"},
+		{name: "channel", properties: map[string]any{"secret": make(chan int)}, wantText: "properties"},
+		{name: "complex", properties: map[string]any{"secret": complex(1, 2)}, wantText: "properties"},
+		{name: "unencodable map key", properties: map[string]any{"order": map[float64]any{1: "very-secret"}}, wantText: "properties"},
+		{name: "map cycle", properties: mapCycle, wantText: "cycle"},
+		{name: "slice cycle", properties: map[string]any{"items": sliceCycle}, wantText: "cycle"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateEvent("order_paid", Event{Email: "ada@example.test", Properties: tt.properties})
-			if err == nil || !strings.Contains(err.Error(), "cycle") {
-				t.Fatalf("validateEvent() error = %v, want cycle rejection", err)
+			_, err := buildPayload(context.Background(), "order_paid", true, Event{Email: "ada@example.test", Properties: tt.properties})
+			var validationErr *ValidationError
+			if !errors.As(err, &validationErr) {
+				t.Fatalf("buildPayload() error = %T %v, want *ValidationError", err, err)
+			}
+			if !strings.Contains(err.Error(), tt.wantText) {
+				t.Errorf("buildPayload() error = %q, want %q", err, tt.wantText)
+			}
+			if strings.Contains(err.Error(), "very-secret") {
+				t.Fatalf("buildPayload() error leaked rejected property value: %q", err)
 			}
 		})
 	}
@@ -151,65 +148,85 @@ func TestBuildPayloadRejectsInvalidEvent(t *testing.T) {
 	}
 }
 
-func TestBuildPayloadNormalizesPropertiesForJSON(t *testing.T) {
-	raw := json.RawMessage(`{"raw":true}`)
+func TestBuildPayloadEncodesPropertiesWithStandardJSON(t *testing.T) {
+	text := "pointer value"
+	var nilPointer *string
+	occurred := time.Date(2026, 9, 13, 8, 15, 30, 250_000_000, time.FixedZone("WIB", 7*60*60))
 	payload, err := buildPayload(context.Background(), "order_paid", true, Event{
 		Email: "ada@example.test",
 		Properties: map[string]any{
 			"bytes":     []byte{1, 2},
-			"raw":       raw,
+			"raw":       json.RawMessage(`{"raw":true}`),
 			"marshaler": namedJSONMarshaler("original"),
-			"bool":      namedBool(true),
-			"string":    namedString("sku"),
-			"int":       namedInt(42),
-			"uint":      namedUint(43),
-			"float":     namedFloat(1.5),
-			"slice":     namedStringSlice{"first", "second"},
-			"array":     namedIntArray{7, 8},
-			"map":       namedIntMap{"count": 3},
+			"text_id":   textID{1, 2, 3, 4},
+			"time":      occurred,
+			"pointer":   &text,
+			"nil":       nilPointer,
+			"struct": struct {
+				Name string `json:"name"`
+			}{Name: "sku"},
+			"int_key":    map[int]string{1: "one"},
+			"bool":       namedBool(true),
+			"string":     namedString("sku"),
+			"int":        namedInt(42),
+			"uint":       namedUint(43),
+			"float":      namedFloat(1.5),
+			"safe_float": 125.75,
+			"slice":      namedStringSlice{"first", "second"},
+			"array":      namedIntArray{7, 8},
+			"map":        namedIntMap{"count": 3},
 		},
 	})
 	if err != nil {
 		t.Fatalf("buildPayload() error = %v", err)
 	}
 
-	if _, ok := payload.Properties["bytes"].([]any); !ok {
-		t.Fatalf("bytes type = %T, want []any", payload.Properties["bytes"])
-	}
-	if _, ok := payload.Properties["raw"].([]any); !ok {
-		t.Fatalf("raw type = %T, want []any", payload.Properties["raw"])
-	}
-	if _, ok := payload.Properties["map"].(map[string]any); !ok {
-		t.Fatalf("map type = %T, want map[string]any", payload.Properties["map"])
-	}
-	if got, want := payload.Properties["marshaler"], any("original"); got != want {
-		t.Errorf("normalized marshaler = %#v, want %#v", got, want)
-	}
-	if got, want := payload.Properties["int"], any(int64(42)); got != want {
-		t.Errorf("normalized int = %#v, want %#v", got, want)
-	}
-	if got, want := payload.Properties["uint"], any(int64(43)); got != want {
-		t.Errorf("normalized uint = %#v, want %#v", got, want)
-	}
-	if got, want := payload.Properties["float"], any(float64(1.5)); got != want {
-		t.Errorf("normalized float = %#v, want %#v", got, want)
-	}
-
-	encoded, err := json.Marshal(payload)
+	encoded, err := json.Marshal(payload.Properties)
 	if err != nil {
-		t.Fatalf("json.Marshal(payload) error = %v", err)
+		t.Fatalf("json.Marshal(properties) error = %v", err)
 	}
 	var got any
 	if err := json.Unmarshal(encoded, &got); err != nil {
-		t.Fatalf("json.Unmarshal(payload) error = %v", err)
+		t.Fatalf("json.Unmarshal(properties) error = %v", err)
 	}
 	var want any
-	if err := json.Unmarshal([]byte(`{"event_key":"order_paid","email":"ada@example.test","is_common":true,"properties":{"array":[7,8],"bool":true,"bytes":[1,2],"float":1.5,"int":42,"map":{"count":3},"marshaler":"original","raw":[123,34,114,97,119,34,58,116,114,117,101,125],"slice":["first","second"],"string":"sku","uint":43}}`), &want); err != nil {
+	if err := json.Unmarshal([]byte(`{"array":[7,8],"bool":true,"bytes":"AQI=","float":1.5,"int":42,"int_key":{"1":"one"},"map":{"count":3},"marshaler":"marshaler escape: original","nil":null,"pointer":"pointer value","raw":{"raw":true},"safe_float":125.75,"slice":["first","second"],"string":"sku","struct":{"name":"sku"},"text_id":"id-01020304","time":"2026-09-13T08:15:30.25+07:00","uint":43}`), &want); err != nil {
 		t.Fatalf("json.Unmarshal(want) error = %v", err)
 	}
 	if !jsonValuesEqual(got, want) {
-		t.Errorf("json.Marshal(payload) = %s, want canonical JSON", encoded)
+		t.Errorf("properties = %s, want standard encoding/json forms", encoded)
 	}
+}
+
+var uuidV4Pattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+func TestBuildPayloadEventIDAndOccurredAt(t *testing.T) {
+	t.Run("generated", func(t *testing.T) {
+		before := time.Now().UTC().Truncate(time.Millisecond)
+		first, err := buildPayload(context.Background(), "order_paid", true, Event{Email: "ada@example.test", EventID: " \t"})
+		if err != nil {
+			t.Fatalf("buildPayload() error = %v", err)
+		}
+		after := time.Now().UTC()
+		second, _ := buildPayload(context.Background(), "order_paid", true, Event{Email: "ada@example.test"})
+		if !uuidV4Pattern.MatchString(first.EventID) || !uuidV4Pattern.MatchString(second.EventID) || first.EventID == second.EventID {
+			t.Errorf("generated event IDs = %q, %q, want distinct lowercase v4 UUIDs", first.EventID, second.EventID)
+		}
+		occurredAt, err := time.Parse(occurredAtLayout, first.OccurredAt)
+		if err != nil || occurredAt.Before(before) || occurredAt.After(after) {
+			t.Errorf("generated OccurredAt = %q (%v), want call time between %v and %v", first.OccurredAt, err, before, after)
+		}
+	})
+	t.Run("explicit", func(t *testing.T) {
+		occurred := time.Date(2026, 9, 13, 8, 15, 30, 250_999_999, time.FixedZone("WIB", 7*60*60))
+		payload, err := buildPayload(context.Background(), "order_paid", true, Event{Email: "ada@example.test", EventID: " evt-123 ", OccurredAt: occurred})
+		if err != nil {
+			t.Fatalf("buildPayload() error = %v", err)
+		}
+		if payload.EventID != "evt-123" || payload.OccurredAt != "2026-09-13T01:15:30.250Z" {
+			t.Errorf("payload = (%q, %q), want trimmed event ID and truncated UTC milliseconds", payload.EventID, payload.OccurredAt)
+		}
+	})
 }
 
 func jsonValuesEqual(got, want any) bool {
@@ -224,22 +241,25 @@ func jsonValuesEqual(got, want any) bool {
 	return string(gotJSON) == string(wantJSON)
 }
 
-func FuzzValidateProperties(f *testing.F) {
+func FuzzNormalizeProperties(f *testing.F) {
 	f.Add("order", "total", int64(42))
 	f.Add("items", "sku", int64(-9007199254740991))
 
 	f.Fuzz(func(t *testing.T, outerKey, innerKey string, amount int64) {
 		properties := map[string]any{outerKey: map[string]any{innerKey: []any{amount, "value"}}}
 		before := properties[outerKey].(map[string]any)[innerKey].([]any)[1]
-		err := validateEvent("order_paid", Event{Email: "ada@example.test", Properties: properties})
+		_, err := normalizeProperties(properties)
 		if amount >= -9007199254740991 && amount <= 9007199254740991 && err != nil {
-			t.Fatalf("validateEvent() error = %v for safe integer", err)
+			t.Fatalf("normalizeProperties() error = %v for safe integer", err)
+		}
+		if (amount < -9007199254740991 || amount > 9007199254740991) && err == nil {
+			t.Fatalf("normalizeProperties() accepted unsafe integer %d", amount)
 		}
 		if got := properties[outerKey].(map[string]any)[innerKey].([]any)[1]; got != before {
-			t.Fatalf("validateEvent() mutated properties: got %#v, want %#v", got, before)
+			t.Fatalf("normalizeProperties() mutated properties: got %#v, want %#v", got, before)
 		}
 		if err != nil && strings.Contains(err.Error(), `"value"`) {
-			t.Fatalf("validateEvent() leaked rendered property value: %q", err)
+			t.Fatalf("normalizeProperties() leaked rendered property value: %q", err)
 		}
 	})
 }

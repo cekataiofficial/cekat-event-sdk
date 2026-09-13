@@ -37,8 +37,8 @@ func (e *EventDefinitionNotFoundError) Error() string {
 	return formatStatusError(e.StatusCode, e.Message)
 }
 
-// ApiError reports a non-success HTTP response other than 401 or 404.
-type ApiError struct {
+// APIError reports a non-success HTTP response other than 401 or 404.
+type APIError struct {
 	StatusCode int
 	Message    string
 	Code       string
@@ -46,7 +46,7 @@ type ApiError struct {
 	Attempts   int
 }
 
-func (e *ApiError) Error() string {
+func (e *APIError) Error() string {
 	return formatStatusError(e.StatusCode, e.Message)
 }
 

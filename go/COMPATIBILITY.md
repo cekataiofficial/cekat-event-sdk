@@ -1,11 +1,32 @@
 # Go SDK Compatibility
 
+## Module layout update (2026-09-13 UTC)
+
+The SDK is split into independently versioned modules so that importing the core never adds framework dependencies to a consumer's module graph or raises their Go floor.
+
+Go module: github.com/cekataiofficial/cekat-event-sdk-go
+Selected minimum Go: 1.22
+
+| Module | `go` directive | Tested framework version |
+| --- | --- | --- |
+| `github.com/cekataiofficial/cekat-event-sdk-go` (core and `middleware/nethttp`) | 1.22 | none; standard library only |
+| `.../middleware/chi` | 1.23 (from Chi v5.3.2) | Chi v5.3.2 |
+| `.../middleware/gin` | 1.25.0 (from Gin v1.12.0) | Gin v1.12.0 |
+| `.../middleware/echo` | 1.25.0 (from Echo v4.15.4) | Echo v4.15.4 |
+| `.../middleware/fiber` | 1.25.0 (from Fiber v3.5.0) | Fiber v3.5.0 |
+| `.../internal/conformance` (unpublished test runner) | 1.22 | jsonschema v6.0.1 |
+
+Go 1.22 is the core floor because the core uses `math/rand/v2` and Go 1.22 loop-variable semantics. The core package, `middleware/nethttp`, and `internal/retryobserver` tests were executed with the Go 1.22.12 toolchain (`GOTOOLCHAIN=go1.22.12 go test -ldflags=-linkmode=external`; external linking is only required because macOS 26 rejects binaries produced by the Go 1.22 internal linker) and with Go 1.26.5. `go vet` reports no use of standard-library APIs newer than each module's `go` directive.
+
+Adapter modules keep the framework versions below as their minimum requirements. Each adapter's `go.mod` contains `replace github.com/cekataiofficial/cekat-event-sdk-go => ../..` for local development; `replace` directives are ignored when the module is consumed as a dependency. Nested modules are released with directory-prefixed tags such as `middleware/gin/v0.1.0`, and each adapter's core requirement must name a published core version at release time.
+
+The sections below record the original single-module evidence from 2026-09-10 and are retained for history.
+
 ## Execution verification (2026-09-10 UTC)
 
 Task 1 selected the module path and dependency versions only after querying the official sources below. The repository uses maintained release lines compatible with the installed Go 1.26.5 toolchain and the approximately-five-year compatibility goal. Go itself supports release lines until two newer major releases exist; the observed current stable release is Go 1.27.1, so selected Go 1.26 remains supported. See the [Go release policy](https://go.dev/doc/devel/release#policy).
 
-Go module: github.com/cekataiofficial/cekat-event-sdk-go
-Selected minimum Go: 1.26
+Original single-module selection (superseded above): minimum Go 1.26
 Gin module: v1.12.0
 Echo module: v4.15.4
 Fiber module: v3.5.0

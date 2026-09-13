@@ -22,7 +22,9 @@ type scriptedRoundTripper struct {
 
 type scriptedStep struct {
 	status int
+	header http.Header
 	body   string
+	reader io.Reader
 	err    error
 }
 
@@ -43,10 +45,18 @@ func (rt *scriptedRoundTripper) RoundTrip(request *http.Request) (*http.Response
 	if step.err != nil {
 		return nil, step.err
 	}
+	header := step.header
+	if header == nil {
+		header = make(http.Header)
+	}
+	var responseBody io.Reader = bytes.NewBufferString(step.body)
+	if step.reader != nil {
+		responseBody = step.reader
+	}
 	return &http.Response{
 		StatusCode: step.status,
-		Body:       io.NopCloser(bytes.NewBufferString(step.body)),
-		Header:     make(http.Header),
+		Body:       io.NopCloser(responseBody),
+		Header:     header,
 		Request:    request,
 	}, nil
 }
@@ -114,9 +124,9 @@ func TestConfiguredRetryCountUsesSaturatedMaxima(t *testing.T) {
 	client.config.sleep = func(context.Context, time.Duration) error { return nil }
 
 	_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
-	var apiErr *ApiError
+	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Attempts != 6 {
-		t.Errorf("OrderPaid() error = %#v, want final *ApiError at attempt 6", err)
+		t.Errorf("OrderPaid() error = %#v, want final *APIError at attempt 6", err)
 	}
 	want := []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond, 800 * time.Millisecond, time.Second}
 	if !slices.Equal(maxima, want) {
@@ -182,7 +192,7 @@ func TestRetry500AndTransportFailures(t *testing.T) {
 }
 
 func TestRetryPermanentStatusesAreNotRetried(t *testing.T) {
-	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusTooManyRequests} {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusNotImplemented} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: status, body: `{"success":false,"error":"permanent"}`}}}
 			client := newScriptedClient(t, roundTripper)
@@ -198,6 +208,123 @@ func TestRetryPermanentStatusesAreNotRetried(t *testing.T) {
 	}
 }
 
+func TestRetryTransientStatuses(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: status, body: "transient"}, {status: http.StatusOK, body: canonicalSuccess}}}
+			client := newScriptedClient(t, roundTripper)
+			client.config.jitter = func(time.Duration) time.Duration { return 0 }
+			client.config.sleep = func(context.Context, time.Duration) error { return nil }
+			if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil {
+				t.Fatalf("OrderPaid() error = %v", err)
+			}
+			if got := roundTripper.Calls(); got != 2 {
+				t.Errorf("attempts = %d, want 2", got)
+			}
+			if !bytes.Equal(roundTripper.bodies[0], roundTripper.bodies[1]) {
+				t.Errorf("retry bodies differ: %s vs %s", roundTripper.bodies[0], roundTripper.bodies[1])
+			}
+		})
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	retryAfter := func(value string) http.Header { return http.Header{"Retry-After": []string{value}} }
+	t.Run("longer Retry-After replaces shorter jitter", func(t *testing.T) {
+		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: http.StatusTooManyRequests, header: retryAfter("2"), body: "slow down"}, {status: http.StatusOK, body: canonicalSuccess}}}
+		client := newScriptedClient(t, roundTripper)
+		client.config.jitter = func(time.Duration) time.Duration { return 50 * time.Millisecond }
+		var slept []time.Duration
+		client.config.sleep = func(_ context.Context, delay time.Duration) error { slept = append(slept, delay); return nil }
+		if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil {
+			t.Fatalf("OrderPaid() error = %v", err)
+		}
+		if !slices.Equal(slept, []time.Duration{2 * time.Second}) {
+			t.Errorf("sleeps = %v, want [2s]", slept)
+		}
+	})
+	t.Run("Retry-After beyond cap returns immediately", func(t *testing.T) {
+		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: http.StatusServiceUnavailable, header: retryAfter("6"), body: "maintenance"}}}
+		client := newScriptedClient(t, roundTripper)
+		client.config.sleep = func(context.Context, time.Duration) error { t.Fatal("sleep called beyond Retry-After cap"); return nil }
+		_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable || apiErr.Attempts != 1 {
+			t.Errorf("OrderPaid() error = %#v, want 503 *APIError after one attempt", err)
+		}
+	})
+	t.Run("invalid Retry-After uses jitter", func(t *testing.T) {
+		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: http.StatusTooManyRequests, header: retryAfter("soon"), body: "slow down"}, {status: http.StatusOK, body: canonicalSuccess}}}
+		client := newScriptedClient(t, roundTripper)
+		client.config.jitter = func(time.Duration) time.Duration { return 7 * time.Millisecond }
+		var slept []time.Duration
+		client.config.sleep = func(_ context.Context, delay time.Duration) error { slept = append(slept, delay); return nil }
+		if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil {
+			t.Fatalf("OrderPaid() error = %v", err)
+		}
+		if !slices.Equal(slept, []time.Duration{7 * time.Millisecond}) {
+			t.Errorf("sleeps = %v, want [7ms]", slept)
+		}
+	})
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 9, 13, 1, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		value string
+		want  time.Duration
+		ok    bool
+	}{
+		{value: "", ok: false},
+		{value: "0", want: 0, ok: true},
+		{value: " 3 ", want: 3 * time.Second, ok: true},
+		{value: "-1", ok: false},
+		{value: "1.5", ok: false},
+		{value: "99999999999999999999", want: time.Duration(math.MaxInt64), ok: true},
+		{value: "Sun, 13 Sep 2026 01:00:04 GMT", want: 4 * time.Second, ok: true},
+		{value: "Sun, 13 Sep 2026 00:59:00 GMT", want: 0, ok: true},
+		{value: "tomorrow", ok: false},
+	} {
+		got, ok := parseRetryAfter(test.value, now)
+		if got != test.want || ok != test.ok {
+			t.Errorf("parseRetryAfter(%q) = (%v, %t), want (%v, %t)", test.value, got, ok, test.want, test.ok)
+		}
+	}
+}
+
+type failingReader struct{ prefix []byte }
+
+func (r *failingReader) Read(p []byte) (int, error) {
+	if len(r.prefix) > 0 {
+		n := copy(p, r.prefix)
+		r.prefix = r.prefix[n:]
+		return n, nil
+	}
+	return 0, io.ErrUnexpectedEOF
+}
+
+func TestInterruptedBodies(t *testing.T) {
+	t.Run("accepted 200 is a decode error and is not retried", func(t *testing.T) {
+		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: http.StatusOK, reader: &failingReader{prefix: []byte(`{"success":tr`)}}}}
+		client := newScriptedClient(t, roundTripper)
+		client.config.sleep = func(context.Context, time.Duration) error { t.Fatal("sleep called after accepted 200"); return nil }
+		_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
+		var decodeErr *ResponseDecodeError
+		if !errors.As(err, &decodeErr) || decodeErr.Attempts != 1 || roundTripper.Calls() != 1 {
+			t.Errorf("OrderPaid() error = %#v with %d calls, want one *ResponseDecodeError", err, roundTripper.Calls())
+		}
+	})
+	t.Run("retryable status stays retryable", func(t *testing.T) {
+		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{status: http.StatusInternalServerError, reader: &failingReader{}}, {status: http.StatusOK, body: canonicalSuccess}}}
+		client := newScriptedClient(t, roundTripper)
+		client.config.jitter = func(time.Duration) time.Duration { return 0 }
+		client.config.sleep = func(context.Context, time.Duration) error { return nil }
+		if _, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"}); err != nil || roundTripper.Calls() != 2 {
+			t.Errorf("OrderPaid() error = %v with %d calls, want success after 2 calls", err, roundTripper.Calls())
+		}
+	})
+}
+
 func TestRetryFinalFailureClassificationAndDefaultCap(t *testing.T) {
 	t.Run("final five hundred is API error", func(t *testing.T) {
 		roundTripper := &scriptedRoundTripper{steps: []scriptedStep{{err: errors.New("disconnect")}, {status: 500, body: `{"success":false,"error":"temporary"}`}, {status: 500, body: `{"success":false,"error":"final"}`}}}
@@ -205,9 +332,9 @@ func TestRetryFinalFailureClassificationAndDefaultCap(t *testing.T) {
 		client.config.jitter = func(time.Duration) time.Duration { return 0 }
 		client.config.sleep = func(context.Context, time.Duration) error { return nil }
 		_, err := client.OrderPaid(context.Background(), Event{Email: "ada@example.test"})
-		var apiErr *ApiError
+		var apiErr *APIError
 		if !errors.As(err, &apiErr) || apiErr.Attempts != 3 {
-			t.Errorf("error = %T %v, want final *ApiError at attempt 3", err, err)
+			t.Errorf("error = %T %v, want final *APIError at attempt 3", err, err)
 		}
 	})
 	t.Run("final transport outcome is unknown", func(t *testing.T) {
