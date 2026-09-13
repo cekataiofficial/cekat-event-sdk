@@ -3,6 +3,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -158,12 +159,49 @@ func handleIngest(w http.ResponseWriter, r *http.Request, store *state.State) {
 		return
 	}
 
+	if response.DisconnectAfterHeaders {
+		writeInterruptedResponse(w, response)
+		return
+	}
+
 	for name, value := range response.Headers {
 		w.Header().Set(name, value)
 	}
 	w.WriteHeader(response.Status)
 	_, _ = io.WriteString(w, response.Body)
 }
+
+// writeInterruptedResponse sends a complete status line and headers, promises
+// more body bytes than it writes, and then closes the connection. Clients observe
+// a known HTTP status followed by a body read failure.
+func writeInterruptedResponse(w http.ResponseWriter, response state.ResponseSpec) {
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "connection hijacking unavailable", http.StatusInternalServerError)
+		return
+	}
+	connection, buffered, err := hijacker.Hijack()
+	if err != nil {
+		return
+	}
+	defer connection.Close()
+	names := make([]string, 0, len(response.Headers))
+	for name := range response.Headers {
+		if !strings.EqualFold(name, "Content-Length") && !strings.EqualFold(name, "Transfer-Encoding") && !strings.EqualFold(name, "Connection") {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	_, _ = fmt.Fprintf(buffered, "HTTP/1.1 %d %s\r\n", response.Status, http.StatusText(response.Status))
+	for _, name := range names {
+		_, _ = fmt.Fprintf(buffered, "%s: %s\r\n", name, response.Headers[name])
+	}
+	_, _ = fmt.Fprintf(buffered, "Content-Length: %d\r\nConnection: close\r\n\r\n%s", len(response.Body)+interruptedBodyShortfall, response.Body)
+	_ = buffered.Flush()
+}
+
+// interruptedBodyShortfall is the number of promised body bytes never written.
+const interruptedBodyShortfall = 1024
 
 func writeInvalidRequest(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
@@ -197,6 +235,7 @@ type responseInput struct {
 	Body                    *string           `json:"body"`
 	DelayMS                 *int              `json:"delay_ms"`
 	DisconnectBeforeHeaders *bool             `json:"disconnect_before_headers"`
+	DisconnectAfterHeaders  *bool             `json:"disconnect_after_headers"`
 }
 
 func (r responseInput) responseSpec() (state.ResponseSpec, bool) {
@@ -207,6 +246,9 @@ func (r responseInput) responseSpec() (state.ResponseSpec, bool) {
 		return state.ResponseSpec{}, false
 	}
 	if r.Status != nil && (*r.Status < http.StatusOK || *r.Status > 599) {
+		return state.ResponseSpec{}, false
+	}
+	if r.DisconnectAfterHeaders != nil && *r.DisconnectAfterHeaders && (r.Status == nil || (r.DisconnectBeforeHeaders != nil && *r.DisconnectBeforeHeaders)) {
 		return state.ResponseSpec{}, false
 	}
 	if r.DelayMS != nil && (*r.DelayMS < 0 || int64(*r.DelayMS) > math.MaxInt64/int64(time.Millisecond)) {
@@ -230,6 +272,9 @@ func (r responseInput) responseSpec() (state.ResponseSpec, bool) {
 	}
 	if r.DisconnectBeforeHeaders != nil {
 		response.DisconnectBeforeHeaders = *r.DisconnectBeforeHeaders
+	}
+	if r.DisconnectAfterHeaders != nil {
+		response.DisconnectAfterHeaders = *r.DisconnectAfterHeaders
 	}
 	return response, true
 }

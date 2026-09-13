@@ -90,13 +90,25 @@ PHP and Ruby must discover, schema-validate, and report each cancellation case o
 
 ## Delivery semantics
 
-The default timeout is **10 seconds per network attempt**. Default retry count is 2 after the initial attempt. Retry only transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `500`. The full-jitter bounds are `[0,100ms]` before retry 1 and `[0,200ms]` before retry 2. Do not retry permanent status cases such as `400`, `401`, `404`, or `429`.
+The default timeout is **3 seconds per network attempt**. Default retry count is 2 after the initial attempt. Retry transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `429`, `500`, `502`, `503`, and `504`. Retry is decided by status alone, so a retryable status whose body cannot be read is still retried. Do not retry other statuses, including `400`, `401`, and `404`.
+
+Before retry `n` (one-indexed), wait a full-jitter delay drawn from `[0, min(100ms * 2^(n-1), 1000ms)]`. The full-jitter bounds are therefore `[0,100ms]` before retry 1 and `[0,200ms]` before retry 2, then `[0,400ms]`, `[0,800ms]`, and `[0,1000ms]` for every later retry. When a retryable response carries a valid `Retry-After` header (non-negative delta-seconds or an HTTP-date), the delay is the larger of the jitter delay and the `Retry-After` delay. When that `Retry-After` delay exceeds **5 seconds**, do not retry: return the response's typed error immediately so a caller is never blocked on a long server-requested pause. Invalid `Retry-After` values are ignored. Backoff remains interruptible by caller cancellation.
+
+A received `200` whose body read fails (connection reset, timeout, or truncated transfer) is a response-decode error with known delivery outcome and is never retried, because the server already accepted the event. A non-`200` whose body read fails retains its status classification, uses the HTTP reason phrase as its error message, and is retried only if its status is retryable.
 
 Retain at most 65,536 response bytes. Read one additional byte to determine truncation; decode an incomplete or invalid UTF-8 boundary with replacement for text APIs, while byte APIs may expose a defensive copy of the retained bytes. A malformed `200` is a response-decode error. A malformed non-`200` retains status classification and bounded body and uses the HTTP reason phrase as its error message.
 
 A valid `200` has top-level `success: true` and `data.success: true`, plus non-empty `data.message`, non-empty `data.event_key`, and string-array `data.validated_properties`. Additional server fields are ignored. A conforming non-`200` has `success: false`, non-empty `error`, and optional `code`. SDKs own the mapping to acknowledgement and typed errors; the mock simulates transport behavior but does not decide SDK error types.
 
-Properties admit only recursive JSON null, booleans, strings, finite numbers, arrays, and string-keyed objects. Integers must be within `[-9007199254740991, 9007199254740991]`; cycles and runtime-specific objects fail before networking. Identity strings are trimmed only to test emptiness and otherwise transmit unchanged. For visitor propagation, `X-Cekat-Visitor-ID` precedes cookie `_cekat_visitor_id`; visitor IDs are trimmed for emptiness and transmission. A nonblank explicit visitor ID precedes request-local context, while a blank explicit value falls back to context.
+Properties admit only recursive JSON null, booleans, strings, finite numbers, arrays, and string-keyed objects. Integers must be within `[-9007199254740991, 9007199254740991]`; cycles and runtime-specific objects fail before networking. A language may first apply its standard JSON encoding conventions (for example Go `json.Marshaler` and `encoding.TextMarshaler` values, pointers, and structs), provided the encoded result satisfies these rules; each runner constructs recipe values that its language's encoder cannot represent. Identity strings are trimmed only to test emptiness and otherwise transmit unchanged. For visitor propagation, `X-Cekat-Visitor-ID` precedes cookie `_cekat_visitor_id`; visitor IDs are trimmed for emptiness and transmission. A nonblank explicit visitor ID precedes request-local context, while a blank explicit value falls back to context.
+
+## Event identity, timestamp, and client identification
+
+Every payload carries `event_id` and `occurred_at`. A caller-supplied event ID is trimmed for emptiness and transmission; a blank or absent event ID is replaced by a lowercase random (version 4) UUID. `occurred_at` is the caller-supplied time, or the time of the SDK call when absent, serialized as UTC RFC 3339 with exactly millisecond precision (`2026-09-13T01:15:30.250Z`), truncating finer precision. Both values are fixed once per SDK call and are identical in every retry attempt, so the server can deduplicate retried deliveries by `event_id`; SDKs still must not claim that the server enforces deduplication.
+
+When a fixture's expected payload omits `event_id` or `occurred_at`, runners assert that each journaled value is generated (a lowercase version 4 UUID, and a canonical UTC millisecond timestamp within the case's execution window), that it is identical across every journaled attempt, and then remove it before the exact payload comparison. When the expected payload declares either value, it is compared exactly.
+
+Every request sends `User-Agent: cekat-event-sdk-<language>/<semver>`, optionally followed by a space and runtime details, where `<language>` is the runner's language directory name. Runners assert this header on every journaled attempt. A fixture's `minimum_retry_delays_ms` declares, per retry, a lower bound on the delay the SDK selected before that retry.
 
 ## Mock control API
 
@@ -119,7 +131,7 @@ POST /api/events/ingest
   an empty queue returns the canonical 200 success envelope
 ```
 
-A `MockResponse` has a required `body`, an integer `status` from 200 through 599 unless `disconnect_before_headers:true`, optional string headers, and optional non-negative `delay_ms`. Delay happens after journaling and before headers; a disconnect is journaled before the HTTP/1.x connection closes. Journal entries retain a positive sequence, method, path, lowercase header names with string-array values, and unchanged request body. Reset before each fixture case and inspect this journal after each fixture case.
+A `MockResponse` has a required `body`, an integer `status` from 200 through 599 unless `disconnect_before_headers:true`, optional string headers, and optional non-negative `delay_ms`. Delay happens after journaling and before headers; a disconnect is journaled before the HTTP/1.x connection closes. `disconnect_after_headers:true` requires `status` and excludes `disconnect_before_headers`: the mock sends the status line and headers, declares a `Content-Length` larger than `body`, writes `body`, and closes the connection so the client observes a body read failure. Journal entries retain a positive sequence, method, path, lowercase header names with string-array values, and unchanged request body. Reset before each fixture case and inspect this journal after each fixture case.
 
 ## Schemas and compatibility evidence
 

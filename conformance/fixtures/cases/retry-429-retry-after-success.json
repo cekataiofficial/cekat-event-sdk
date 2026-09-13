@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "id": "retry-429-retry-after-success",
+  "description": "HTTP 429 waits at least its Retry-After delay before retrying.",
+  "kind": "retry",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 429,
+      "headers": {
+        "Retry-After": "1"
+      },
+      "body": "not an error envelope"
+    },
+    {
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"success\":true,\"message\":\"accepted\",\"event_key\":\"order_paid\",\"validated_properties\":[\"order_id\"]}}"
+    }
+  ],
+  "client": {
+    "retry_count": 2
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 2,
+    "delivery_outcome_unknown": false,
+    "acknowledgement": {
+      "success": true,
+      "message": "accepted",
+      "event_key": "order_paid",
+      "validated_properties": [
+        "order_id"
+      ]
+    },
+    "minimum_retry_delays_ms": [
+      1000
+    ],
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}

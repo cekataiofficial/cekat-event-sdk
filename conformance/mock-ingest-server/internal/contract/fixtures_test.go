@@ -43,6 +43,11 @@ func TestConformanceReadmeContractMutations(t *testing.T) {
 			new:  "A schema-declared `not_applicable` is allowed.",
 		},
 		{
+			name: "permanent 429",
+			old:  "Retry transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `429`, `500`, `502`, `503`, and `504`.",
+			new:  "Retry transport failures and HTTP `500`. Do not retry `429`.",
+		},
+		{
 			name: "missing graceful cleanup",
 			old:  "Send `SIGINT` or `SIGTERM` after the runner exits, wait for exit status `0`, and allow its five-second graceful-shutdown deadline before force-cleaning a failed process.",
 			new:  "Stop the process after the runner exits.",
@@ -118,7 +123,10 @@ func validateConformanceReadme(readme string) error {
 	if err := require("Fixture discovery, validation, and accounting", "every direct `*.json` file in the absolute directory", "nested-file discovery are forbidden", "unaccounted discovered case", "Unknown fixture forms cannot be skipped", "Applicable cases cannot be skipped", "disjoint union of executed `passed` IDs and validated `not_applicable` IDs", "Runtime recipes are fixture instructions", "expands `response_body_recipe` to an ordinary response body", "reset the mock", "assert the journal after the case", "fixed path", "exactly to `expect.error_message`", `{"success":false,"error":"defined server error","code":"fixture_code"}`, `{"success":true,"data":{"success":true,"message":"accepted","event_key":"order_paid","validated_properties":["order_id"]}}`, "before_request", "during_request", "during_backoff", `{"requires_capabilities":["caller_cancellation"],"inapplicable_languages":["php","ruby"]}`); err != nil {
 		return err
 	}
-	if err := require("Delivery semantics", "10 seconds per network attempt", "Default retry count is 2 after the initial attempt", "Retry only transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `500`", "[0,100ms]", "[0,200ms]", "Retain at most 65,536 response bytes", "Read one additional byte to determine truncation", "simulates transport behavior but does not decide SDK error types"); err != nil {
+	if err := require("Delivery semantics", "3 seconds per network attempt", "Default retry count is 2 after the initial attempt", "Retry transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `429`, `500`, `502`, `503`, and `504`", "[0,100ms]", "[0,200ms]", "min(100ms * 2^(n-1), 1000ms)", "exceeds **5 seconds**, do not retry", "is a response-decode error with known delivery outcome and is never retried", "Retain at most 65,536 response bytes", "Read one additional byte to determine truncation", "simulates transport behavior but does not decide SDK error types"); err != nil {
+		return err
+	}
+	if err := require("Event identity, timestamp, and client identification", "lowercase random (version 4) UUID", "UTC RFC 3339 with exactly millisecond precision", "identical in every retry attempt", "User-Agent: cekat-event-sdk-<language>/<semver>"); err != nil {
 		return err
 	}
 	if err := require("Mock control API", "POST /__control/reset", "POST /__control/responses", "GET /__control/requests", "Reset before each fixture case and inspect this journal after each fixture case"); err != nil {
@@ -190,8 +198,8 @@ func loadCases(t *testing.T) map[string]map[string]any {
 
 func TestCaseIDsAndTokens(t *testing.T) {
 	cases := loadCases(t)
-	if len(cases) != 49 {
-		t.Errorf("discovered %d conformance cases, want 49", len(cases))
+	if len(cases) != 55 {
+		t.Errorf("discovered %d conformance cases, want 55", len(cases))
 	}
 	ids := make(map[string]string, len(cases))
 
@@ -293,7 +301,13 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 		"retry-no-400",
 		"retry-no-401",
 		"retry-no-404",
-		"retry-no-429",
+		"retry-429-success",
+		"retry-429-retry-after-success",
+		"retry-429-retry-after-exceeds-cap",
+		"retry-502-503-504-exhausted",
+		"retry-500-body-interrupted-success",
+		"success-body-interrupted",
+		"request-explicit-event-id-occurred-at",
 		"cancellation-before-request",
 		"cancellation-during-request",
 		"cancellation-during-backoff",
@@ -309,8 +323,8 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 			t.Fatalf("required behavior fixture %q is missing", id)
 		}
 	}
-	if len(cases) != 49 {
-		t.Errorf("discovered %d cases, want 49", len(cases))
+	if len(cases) != 55 {
+		t.Errorf("discovered %d cases, want 55", len(cases))
 	}
 
 	assertCanonicalResponse(t, byID["success-valid"])
@@ -538,6 +552,7 @@ func assertRetrySemantics(t *testing.T, cases map[string]map[string]any) {
 			t.Errorf("%s must specify the complete ordered FIFO retry response sequence", expected.id)
 		}
 	}
+	assertExtendedRetrySemantics(t, cases, canonicalSuccess)
 	if fixtureExpect(cases["retry-mixed-final-500"])["result"] != "api_error" || fixtureExpect(cases["retry-mixed-final-transport"])["result"] != "transport_error" || fixtureExpect(cases["retry-mixed-final-transport"])["delivery_outcome_unknown"] != true {
 		t.Errorf("mixed retry cases must expose their final failure type and certainty")
 	}
@@ -561,12 +576,59 @@ func assertRetrySemantics(t *testing.T, cases map[string]map[string]any) {
 		{"retry-no-400", 400, structuredError},
 		{"retry-no-401", 401, structuredError},
 		{"retry-no-404", 404, structuredError},
-		{"retry-no-429", 429, "not an error envelope"},
 	} {
 		fixture := cases[permanent.id]
 		if fixtureExpect(fixture)["attempts"] != float64(1) || !equalJSON(fixtureResponses(fixture), []any{response(permanent.status, permanent.body)}) {
 			t.Errorf("%s must specify its permanent status as one non-retry FIFO response", permanent.id)
 		}
+	}
+}
+
+func assertExtendedRetrySemantics(t *testing.T, cases map[string]map[string]any, canonicalSuccess string) {
+	t.Helper()
+	status := func(code float64, body string) map[string]any { return map[string]any{"status": code, "body": body} }
+	withHeaders := func(code float64, retryAfter, body string) map[string]any {
+		return map[string]any{"status": code, "headers": map[string]any{"Retry-After": retryAfter}, "body": body}
+	}
+	interrupted := func(code float64, body string) map[string]any {
+		return map[string]any{"status": code, "body": body, "disconnect_after_headers": true}
+	}
+	for _, expected := range []struct {
+		id        string
+		responses []any
+		result    string
+		attempts  float64
+	}{
+		{"retry-429-success", []any{status(429, "not an error envelope"), status(200, canonicalSuccess)}, "acknowledgement", 2},
+		{"retry-429-retry-after-success", []any{withHeaders(429, "1", "not an error envelope"), status(200, canonicalSuccess)}, "acknowledgement", 2},
+		{"retry-429-retry-after-exceeds-cap", []any{withHeaders(429, "120", "not an error envelope")}, "api_error", 1},
+		{"retry-502-503-504-exhausted", []any{status(502, "bad gateway"), status(503, "unavailable"), status(504, "gateway timeout")}, "api_error", 3},
+		{"retry-500-body-interrupted-success", []any{interrupted(500, `{"success":fal`), status(200, canonicalSuccess)}, "acknowledgement", 2},
+		{"success-body-interrupted", []any{interrupted(200, `{"success":tr`)}, "response_decode_error", 1},
+	} {
+		fixture := cases[expected.id]
+		expect := fixtureExpect(fixture)
+		if expect["result"] != expected.result || expect["attempts"] != expected.attempts || expect["delivery_outcome_unknown"] != false {
+			t.Errorf("%s must expect %s after %v known-outcome attempts", expected.id, expected.result, expected.attempts)
+		}
+		if !equalJSON(fixtureResponses(fixture), expected.responses) {
+			t.Errorf("%s must specify the complete ordered FIFO response sequence", expected.id)
+		}
+	}
+	if !equalJSON(fixtureExpect(cases["retry-429-retry-after-success"])["minimum_retry_delays_ms"], []any{float64(1000)}) {
+		t.Errorf("retry-429-retry-after-success must prove the one-second Retry-After lower bound")
+	}
+	if expect := fixtureExpect(cases["retry-502-503-504-exhausted"]); expect["status"] != float64(504) || expect["error_message"] != "Gateway Timeout" {
+		t.Errorf("retry-502-503-504-exhausted must expose the final 504 status and reason phrase")
+	}
+	if expect := fixtureExpect(cases["retry-429-retry-after-exceeds-cap"]); expect["status"] != float64(429) || expect["error_message"] != "Too Many Requests" {
+		t.Errorf("retry-429-retry-after-exceeds-cap must expose the 429 status and reason phrase")
+	}
+	explicit := fixtureExpect(cases["request-explicit-event-id-occurred-at"])
+	request, _ := explicit["request"].(map[string]any)
+	payload, _ := request["payload"].(map[string]any)
+	if payload["event_id"] != "evt-checkout-123" || payload["occurred_at"] != "2026-09-13T01:15:30.250Z" {
+		t.Errorf("request-explicit-event-id-occurred-at must prove trimming and UTC millisecond normalization")
 	}
 }
 
