@@ -51,10 +51,10 @@ func TestTypedErrorsMatchWithErrorsAs(t *testing.T) {
 		},
 		{
 			name: "API",
-			err:  &ApiError{StatusCode: 500, Message: "server failed", Code: "server_error", Body: body, Attempts: 3},
+			err:  &APIError{StatusCode: 500, Message: "server failed", Code: "server_error", Body: body, Attempts: 3},
 			assertType: func(t *testing.T, err error) {
 				t.Helper()
-				var typed *ApiError
+				var typed *APIError
 				if !errors.As(err, &typed) || typed.StatusCode != 500 || typed.Message != "server failed" || typed.Code != "server_error" || typed.Attempts != 3 {
 					t.Fatalf("errors.As() = %#v, want API error fields", typed)
 				}
@@ -105,7 +105,7 @@ func TestTypedErrorsRetainResponseBodies(t *testing.T) {
 	}{
 		{name: "authentication", body: (&AuthenticationError{Body: body}).Body},
 		{name: "event definition not found", body: (&EventDefinitionNotFoundError{Body: body}).Body},
-		{name: "API", body: (&ApiError{Body: body}).Body},
+		{name: "API", body: (&APIError{Body: body}).Body},
 		{name: "response decode", body: (&ResponseDecodeError{Body: body}).Body},
 	}
 

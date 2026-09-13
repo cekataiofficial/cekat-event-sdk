@@ -21,6 +21,7 @@ esac
 [ -z "$(ls -A "$4")" ] || { echo "output directory must be empty" >&2; exit 2; }
 
 cd "$(dirname "$0")/.."
-go test ./...
-go vet ./...
+for module in . middleware/gin middleware/echo middleware/fiber middleware/chi internal/conformance; do
+  (cd "$module" && go test ./... && go vet ./...)
+done
 exec go run ./internal/packageprep --version "$2" --output "$4"

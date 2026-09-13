@@ -4,11 +4,32 @@ import (
 	"context"
 	"net/http"
 	"strings"
+)
 
-	"github.com/cekataiofficial/cekat-event-sdk-go/internal/visitor"
+const (
+	// VisitorHeader is the request header browser helpers use to propagate the
+	// visitor ID to cross-origin APIs.
+	VisitorHeader = "X-Cekat-Visitor-ID"
+	// VisitorCookie is the cookie in which the Cekat browser tracker stores the
+	// visitor ID.
+	VisitorCookie = "_cekat_visitor_id"
 )
 
 type visitorContextKey struct{}
+
+// ResolveVisitorID returns the trimmed visitor ID from the VisitorHeader value,
+// falling back to the VisitorCookie value. Use it to build middleware for
+// frameworks that do not expose *http.Request. Visitor IDs are untrusted
+// correlation data and must never be used for authentication or authorization.
+func ResolveVisitorID(header, cookie string) (string, bool) {
+	if id := strings.TrimSpace(header); id != "" {
+		return id, true
+	}
+	if id := strings.TrimSpace(cookie); id != "" {
+		return id, true
+	}
+	return "", false
+}
 
 // WithVisitorID returns a context carrying a trimmed visitor ID. Blank visitor IDs
 // leave ctx unchanged so existing request-local visitor state is not overwritten.
@@ -38,10 +59,10 @@ func WithVisitorFromRequest(request *http.Request) *http.Request {
 		return nil
 	}
 	cookie := ""
-	if value, err := request.Cookie("_cekat_visitor_id"); err == nil {
+	if value, err := request.Cookie(VisitorCookie); err == nil {
 		cookie = value.Value
 	}
-	visitorID, ok := visitor.Resolve(request.Header.Get("X-Cekat-Visitor-ID"), cookie)
+	visitorID, ok := ResolveVisitorID(request.Header.Get(VisitorHeader), cookie)
 	if !ok {
 		return request
 	}

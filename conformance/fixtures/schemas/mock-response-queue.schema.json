@@ -13,12 +13,22 @@
         },
         "body": {"type": "string"},
         "delay_ms": {"type": "integer", "minimum": 0},
-        "disconnect_before_headers": {"type": "boolean"}
+        "disconnect_before_headers": {"type": "boolean"},
+        "disconnect_after_headers": {"type": "boolean"}
       },
       "additionalProperties": false,
       "anyOf": [
         {"required": ["status"]},
         {"required": ["disconnect_before_headers"], "properties": {"disconnect_before_headers": {"const": true}}}
+      ],
+      "allOf": [
+        {
+          "if": {"required": ["disconnect_after_headers"], "properties": {"disconnect_after_headers": {"const": true}}},
+          "then": {
+            "required": ["status"],
+            "not": {"required": ["disconnect_before_headers"], "properties": {"disconnect_before_headers": {"const": true}}}
+          }
+        }
       ]
     }
   },

@@ -47,6 +47,8 @@
         "phone_number": {"type": "string"},
         "contact_name": {"type": "string"},
         "visitor_id": {"type": "string"},
+        "event_id": {"type": "string"},
+        "occurred_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{3})?(Z|[+-][0-9]{2}:[0-9]{2})$"},
         "properties": {
           "type": "object",
           "additionalProperties": {"$ref": "json-value.schema.json#/$defs/value"}
@@ -132,6 +134,7 @@
         "observed_body_bytes": {"type": "integer", "minimum": 0},
         "body_truncated": {"type": "boolean"},
         "request": {"$ref": "#/$defs/expected_request"},
+        "minimum_retry_delays_ms": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0}},
         "jitter_bounds_ms": {
           "type": "array",
           "prefixItems": [

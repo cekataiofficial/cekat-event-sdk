@@ -6,6 +6,14 @@ export interface EventInput {
   phoneNumber?: string;
   contactName?: string;
   visitorId?: string;
+  /**
+   * Identifies this event so the server can deduplicate deliveries. When blank, the SDK
+   * generates a random UUID for the call and reuses it for every retry. Supply a stable ID
+   * (for example an order or webhook ID) when the same business event may be sent twice.
+   */
+  eventId?: string;
+  /** When the event happened. Defaults to the time of the call; sent as UTC milliseconds. */
+  occurredAt?: Date;
   properties?: Record<string, JsonValue>;
 }
 
@@ -33,6 +41,8 @@ export interface CallOptions {
 /** Internal representation sent to the ingest endpoint. */
 export interface WirePayload {
   event_key: string;
+  event_id: string;
+  occurred_at: string;
   is_common: boolean;
   email?: string;
   phone_number?: string;

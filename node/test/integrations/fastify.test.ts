@@ -23,6 +23,30 @@ async function appWithVisitor(registerRoutes: (scoped: FastifyInstance) => void)
 }
 
 describe('Fastify visitor plugin', () => {
+  it('applies to sibling routes and keeps the visitor through JSON body parsing on parallel POST requests', async () => {
+    const app = Fastify();
+    applications.push(app);
+    await app.register(visitorPlugin);
+    app.post('/orders', async (request) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.floor(Math.random() * 5)));
+      return { visitorId: currentVisitorId() ?? null, orderId: (request.body as { orderId: string }).orderId };
+    });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const address = app.server.address();
+    if (address === null || typeof address === 'string') throw new Error('Expected TCP listener');
+
+    const visitorIds = Array.from({ length: 10 }, (_, index) => `fastify-post-${index}`);
+    const responses = await Promise.all(visitorIds.map((visitorId, index) => fetch(`http://127.0.0.1:${address.port}/orders`, {
+      method: 'POST',
+      headers: { 'x-cekat-visitor-id': visitorId, 'content-type': 'application/json' },
+      body: JSON.stringify({ orderId: `order-${index}`, padding: 'x'.repeat(64_000) }),
+    })));
+
+    await expect(Promise.all(responses.map((response) => response.json()))).resolves.toEqual(
+      visitorIds.map((visitorId, index) => ({ visitorId, orderId: `order-${index}` })),
+    );
+  });
+
   it('uses header, cookie, or neither after an awaited timer without mutating the request or response', async () => {
     const app = await appWithVisitor((scoped) => scoped.get('/visitor', async (request, reply) => {
       const headersBefore = JSON.stringify(request.headers);

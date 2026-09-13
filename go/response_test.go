@@ -162,9 +162,9 @@ func TestDecodeResponseMapsNonSuccessStatuses(t *testing.T) {
 			name: "structured 400", statusCode: http.StatusBadRequest, attempts: 1,
 			body: `{"success":false,"error":"bad event","code":"bad_event"}`,
 			assert: func(t *testing.T, err error) {
-				var api *ApiError
+				var api *APIError
 				if !errors.As(err, &api) || api.Message != "bad event" || api.Code != "bad_event" {
-					t.Fatalf("error = %#v, want structured *ApiError", api)
+					t.Fatalf("error = %#v, want structured *APIError", api)
 				}
 			},
 		},
@@ -192,9 +192,9 @@ func TestDecodeResponseMapsNonSuccessStatuses(t *testing.T) {
 			name: "structured 500", statusCode: http.StatusInternalServerError, attempts: 4,
 			body: `{"success":false,"error":"retry exhausted"}`,
 			assert: func(t *testing.T, err error) {
-				var api *ApiError
+				var api *APIError
 				if !errors.As(err, &api) || api.Message != "retry exhausted" || api.Code != "" {
-					t.Fatalf("error = %#v, want *ApiError with absent code", api)
+					t.Fatalf("error = %#v, want *APIError with absent code", api)
 				}
 			},
 		},
@@ -233,12 +233,12 @@ func TestDecodeResponseMalformedNonSuccessUsesStatusText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := decodeResponse(tt.statusCode, strings.NewReader(tt.body), 2)
-			var api *ApiError
+			var api *APIError
 			if !errors.As(err, &api) {
-				t.Fatalf("decodeResponse() error = %T %v, want *ApiError", err, err)
+				t.Fatalf("decodeResponse() error = %T %v, want *APIError", err, err)
 			}
 			if api.Message != http.StatusText(tt.statusCode) || api.Code != "" {
-				t.Errorf("ApiError = %#v, want fallback status text and blank code", api)
+				t.Errorf("APIError = %#v, want fallback status text and blank code", api)
 			}
 			assertStatusErrorFields(t, err, tt.statusCode, 2, tt.body)
 		})
@@ -259,12 +259,12 @@ func TestDecodeResponseRetainsBoundedMultibyteBody(t *testing.T) {
 	}
 
 	_, err = decodeResponse(http.StatusBadRequest, strings.NewReader(body), 1)
-	var api *ApiError
+	var api *APIError
 	if !errors.As(err, &api) {
-		t.Fatalf("decodeResponse(400) error = %T %v, want *ApiError", err, err)
+		t.Fatalf("decodeResponse(400) error = %T %v, want *APIError", err, err)
 	}
 	if api.Message != http.StatusText(http.StatusBadRequest) || len(api.Body) != responseBodyLimit || !bytes.Equal(api.Body, want) {
-		t.Errorf("ApiError = %#v, want bounded body and fallback status text", api)
+		t.Errorf("APIError = %#v, want bounded body and fallback status text", api)
 	}
 }
 
@@ -279,9 +279,9 @@ func assertStatusErrorFields(t *testing.T, err error, statusCode, attempts int, 
 		if typed.StatusCode != statusCode || typed.Attempts != attempts || string(typed.Body) != body {
 			t.Errorf("EventDefinitionNotFoundError = %#v, want status, attempts, and body", typed)
 		}
-	case *ApiError:
+	case *APIError:
 		if typed.StatusCode != statusCode || typed.Attempts != attempts || string(typed.Body) != body {
-			t.Errorf("ApiError = %#v, want status, attempts, and body", typed)
+			t.Errorf("APIError = %#v, want status, attempts, and body", typed)
 		}
 	default:
 		t.Errorf("error = %T, want status error", err)

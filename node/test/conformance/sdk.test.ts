@@ -88,6 +88,8 @@ function eventFor(fixture: Fixture): Record<string, any> {
   if ('phone_number' in event) { event.phoneNumber = event.phone_number; delete event.phone_number; }
   if ('contact_name' in event) { event.contactName = event.contact_name; delete event.contact_name; }
   if ('visitor_id' in event) { event.visitorId = event.visitor_id; delete event.visitor_id; }
+  if ('event_id' in event) { event.eventId = event.event_id; delete event.event_id; }
+  if ('occurred_at' in event) { event.occurredAt = new Date(event.occurred_at); delete event.occurred_at; }
   return event;
 }
 function propertiesFor(recipe: string): any {
@@ -153,12 +155,32 @@ function assertResult(fixture: Fixture, result: unknown, error: unknown, observe
     expect(observedBodies[0]?.bodyTruncated).toBe(expected.body_truncated);
   }
 }
-async function assertJournal(fixture: Fixture): Promise<void> {
+const GENERATED_EVENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const CANONICAL_OCCURRED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const USER_AGENT = /^cekat-event-sdk-node\/\d+\.\d+\.\d+\S*( .+)?$/;
+async function assertJournal(fixture: Fixture, window: { started: number; finished: number }): Promise<void> {
   const entries = await journal(); expect(entries).toHaveLength(fixture.expect.attempts);
+  for (const entry of entries) { expect(entry.headers['user-agent']).toHaveLength(1); expect(entry.headers['user-agent'][0]).toMatch(USER_AGENT); }
   if (fixture.expect.request === undefined) return;
+  const generated = new Map<string, string>();
   for (const [index, entry] of entries.entries()) {
     expect(entry).toMatchObject({ sequence: index + 1, method: 'POST', path: fixture.expect.request.path });
-    expect(entry.headers.authorization).toEqual([fixture.expect.request.authorization]); expect(JSON.parse(entry.body)).toEqual(fixture.expect.request.payload);
+    expect(entry.headers.authorization).toEqual([fixture.expect.request.authorization]);
+    const actual = JSON.parse(entry.body);
+    for (const field of ['event_id', 'occurred_at']) {
+      if (field in fixture.expect.request.payload) continue;
+      const value = actual[field];
+      if (field === 'event_id') expect(value).toMatch(GENERATED_EVENT_ID);
+      else {
+        expect(value).toMatch(CANONICAL_OCCURRED_AT);
+        expect(Date.parse(value)).toBeGreaterThanOrEqual(window.started - 1_000);
+        expect(Date.parse(value)).toBeLessThanOrEqual(window.finished + 1_000);
+      }
+      if (generated.has(field)) expect(value).toBe(generated.get(field));
+      generated.set(field, value);
+      delete actual[field];
+    }
+    expect(actual).toEqual(fixture.expect.request.payload);
   }
 }
 async function execute(fixture: Fixture): Promise<void> {
@@ -183,12 +205,18 @@ async function execute(fixture: Fixture): Promise<void> {
     return dispatch(client, fixture, controller?.signal);
   };
   let result: unknown; let error: unknown;
+  const started = Date.now();
   try {
     const inbound = fixture.inbound;
     if (inbound?.header_visitor_id !== undefined || inbound?.cookie_visitor_id !== undefined) result = await runWithVisitorFromHeaders({ 'x-cekat-visitor-id': inbound.header_visitor_id, cookie: inbound.cookie_visitor_id === undefined ? undefined : `_cekat_visitor_id=${inbound.cookie_visitor_id}` }, undefined, invoke);
     else if (inbound?.ambient_visitor_id !== undefined) result = await runWithVisitorId(inbound.ambient_visitor_id, invoke); else result = await invoke();
   } catch (caught) { error = caught; }
+  const finished = Date.now();
   assertResult(fixture, result, error, observedBodies);
+  if (fixture.expect.minimum_retry_delays_ms !== undefined) {
+    expect(delays).toHaveLength(fixture.expect.minimum_retry_delays_ms.length);
+    for (const [index, minimum] of fixture.expect.minimum_retry_delays_ms.entries()) expect(delays[index]).toBeGreaterThanOrEqual(minimum);
+  }
   if (fixture.expect.jitter_bounds_ms !== undefined) {
     expect(delays).toHaveLength(fixture.expect.jitter_bounds_ms.length);
     for (const [index, [minimum, maximum]] of fixture.expect.jitter_bounds_ms.entries()) {
@@ -196,7 +224,7 @@ async function execute(fixture: Fixture): Promise<void> {
       expect(delays[index]).toBeLessThanOrEqual(maximum);
     }
   }
-  await assertJournal(fixture);
+  await assertJournal(fixture, { started, finished });
 }
 
 describe('shared fixture schema validation', () => {

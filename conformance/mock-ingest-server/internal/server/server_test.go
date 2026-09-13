@@ -265,6 +265,38 @@ func TestEmptyQueueDelayAndDisconnectAfterJournal(t *testing.T) {
 	}
 }
 
+func TestDisconnectAfterHeadersSendsStatusThenInterruptsBody(t *testing.T) {
+	srv := httptest.NewServer(New(state.New()))
+	defer srv.Close()
+
+	postJSON(t, srv.URL+"/__control/responses", `{"responses":[{"status":200,"headers":{"Content-Type":"application/json","Retry-After":"1"},"body":"{\"success\":tr","disconnect_after_headers":true}]}`, http.StatusNoContent)
+	response, err := http.Post(srv.URL+"/api/events/ingest", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("interrupted response headers were not received: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "application/json" || response.Header.Get("Retry-After") != "1" {
+		t.Fatalf("interrupted response = %d %#v", response.StatusCode, response.Header)
+	}
+	body, err := io.ReadAll(response.Body)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("body read error = %v, want io.ErrUnexpectedEOF", err)
+	}
+	if string(body) != `{"success":tr` {
+		t.Fatalf("partial body = %q", body)
+	}
+	if got := journal(t, srv.URL); len(got.Requests) != 1 {
+		t.Fatalf("journal length = %d, want 1", len(got.Requests))
+	}
+
+	for _, invalid := range []string{
+		`{"responses":[{"body":"","disconnect_after_headers":true}]}`,
+		`{"responses":[{"status":200,"body":"","disconnect_before_headers":true,"disconnect_after_headers":true}]}`,
+	} {
+		postJSON(t, srv.URL+"/__control/responses", invalid, http.StatusBadRequest)
+	}
+}
+
 type journalResponse struct {
 	Requests []state.RequestRecord `json:"requests"`
 }

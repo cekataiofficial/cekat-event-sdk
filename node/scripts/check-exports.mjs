@@ -23,8 +23,10 @@ async function filesUnder(directory) {
 function exportTargets(exports) {
   const targets = [];
   for (const [subpath, entry] of Object.entries(exports)) {
-    if (!subpath.startsWith('./') || typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error(`invalid export definition for ${subpath}`);
-    for (const condition of ['types', 'import']) {
+    if ((subpath !== '.' && !subpath.startsWith('./')) || typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error(`invalid export definition for ${subpath}`);
+    // `default` (not `import`) lets CommonJS consumers load this ESM package with require().
+    if (Object.keys(entry).join(',') !== 'types,default') throw new Error(`export ${subpath} must declare exactly types then default conditions`);
+    for (const condition of ['types', 'default']) {
       const target = entry[condition];
       if (typeof target !== 'string' || !target.startsWith('./dist/')) throw new Error(`export ${subpath} is missing a dist ${condition} target`);
       targets.push([subpath, condition, target]);

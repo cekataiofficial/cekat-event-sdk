@@ -17,7 +17,7 @@ const TYPESCRIPT_COMPILER_API_VERSION = '5.9.3';
 const packageNames = {
   typescript: 'typescript', vitest: 'vitest', playwright: 'playwright', semver: 'semver',
   'types-node': '@types/node', express: 'express', 'types-express': '@types/express',
-  fastify: 'fastify', 'fastify-plugin': 'fastify-plugin', koa: 'koa', 'types-koa': '@types/koa',
+  fastify: 'fastify', koa: 'koa', 'types-koa': '@types/koa',
   nestjs: '@nestjs/common', 'nestjs-core': '@nestjs/core',
   'nestjs-platform-express': '@nestjs/platform-express', 'nestjs-platform-fastify': '@nestjs/platform-fastify',
   nextjs: 'next', axios: 'axios',
@@ -26,7 +26,7 @@ const packageNames = {
 // support. TypeScript is included because the boundary guard executes its parser.
 // Every runtime, declaration, and plugin package does.
 const runtimeEngineKeys = new Set([
-  'typescript', 'types-node', 'express', 'types-express', 'fastify', 'fastify-plugin', 'koa', 'types-koa',
+  'typescript', 'types-node', 'express', 'types-express', 'fastify', 'koa', 'types-koa',
   'nestjs', 'nestjs-core', 'nestjs-platform-express', 'nestjs-platform-fastify', 'nextjs', 'axios',
 ]);
 
@@ -87,7 +87,7 @@ function packageSupportsVersion(metadata, selectedVersion, nodeVersion) {
   return engine === undefined || permitsNodeVersion(engine, nodeVersion);
 }
 
-export function evaluateCompatibility(input, { now = new Date().toISOString(), sources = {}, packageNodeRange = '>=22.0.0 <28.0.0' } = {}) {
+export function evaluateCompatibility(input, { now = new Date().toISOString(), sources = {}, packageNodeRange = '>=22.12.0 <28.0.0' } = {}) {
   const date = new Date(now);
   if (Number.isNaN(date.valueOf())) fail('retrieval timestamp is invalid');
   const floorVersion = declaredFloor(packageNodeRange);
@@ -139,13 +139,19 @@ export function evaluateCompatibility(input, { now = new Date().toISOString(), s
   };
 }
 
-export function renderCompatibilityMarkdown(evidence) {
+export function renderCompatibilityMarkdown(evidence, peerDependencies = {}) {
   const labels = {
     typescript: 'TypeScript', vitest: 'Vitest', playwright: 'Playwright', semver: 'SemVer (npm maintained range evaluator)',
-    'types-node': '@types/node', express: 'Express', 'types-express': '@types/express', fastify: 'Fastify', 'fastify-plugin': 'fastify-plugin', koa: 'Koa', 'types-koa': '@types/koa', nestjs: '@nestjs/common', 'nestjs-core': '@nestjs/core', 'nestjs-platform-express': '@nestjs/platform-express', 'nestjs-platform-fastify': '@nestjs/platform-fastify', nextjs: 'Next.js (Node engine compatibility)', axios: 'Axios',
+    'types-node': '@types/node', express: 'Express', 'types-express': '@types/express', fastify: 'Fastify', koa: 'Koa', 'types-koa': '@types/koa', nestjs: '@nestjs/common', 'nestjs-core': '@nestjs/core', 'nestjs-platform-express': '@nestjs/platform-express', 'nestjs-platform-fastify': '@nestjs/platform-fastify', nextjs: 'Next.js (Node engine compatibility)', axios: 'Axios',
   };
   const rows = [['Node.js', evidence.node.versions[evidence.node.floor], evidence.node.range], ...Object.entries(evidence.versions).map(([key, version]) => [labels[key], version, `^${parseVersion(version).major}.0.0`])];
-  return `# Node SDK compatibility evidence\n\nRetrieved: ${evidence.retrievedAt}\n\n## Official sources\n\n- Node release schedule: ${evidence.sources.nodeSchedule}\n- Node distribution index: ${evidence.sources.nodeIndex}\n- npm registry: \`${evidence.sources.npm}\`\n\nThe compatibility gate selected active even-numbered Node LTS lines ${evidence.node.majors.join(', ')}: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node ${evidence.nodeFloor} (${evidence.packageNodeRange}); odd, EOL, and package-engine-incompatible lines are not supported. TypeScript is deliberately pinned to the exact compatible version ${TYPESCRIPT_COMPILER_API_VERSION} because the browser/Edge boundary guard uses its supported createSourceFile compiler API for fail-closed AST parsing. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.\n\n| Component | Exact observed version | Selected support range |\n| --- | --- | --- |\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n`;
+  return `# Node SDK compatibility evidence\n\nRetrieved: ${evidence.retrievedAt}\n\n## Official sources\n\n- Node release schedule: ${evidence.sources.nodeSchedule}\n- Node distribution index: ${evidence.sources.nodeIndex}\n- npm registry: \`${evidence.sources.npm}\`\n\nThe compatibility gate selected active even-numbered Node LTS lines ${evidence.node.majors.join(', ')}: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node ${evidence.nodeFloor} (${evidence.packageNodeRange}); odd, EOL, and package-engine-incompatible lines are not supported. TypeScript is deliberately pinned to the exact compatible version ${TYPESCRIPT_COMPILER_API_VERSION} because the browser/Edge boundary guard uses its supported createSourceFile compiler API for fail-closed AST parsing. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.\n\n| Component | Exact observed version | Selected support range |\n| --- | --- | --- |\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n${renderPeerRanges(peerDependencies)}`;
+}
+
+function renderPeerRanges(peerDependencies) {
+  const entries = Object.entries(peerDependencies).sort(([left], [right]) => left.localeCompare(right));
+  if (!entries.length) return '';
+  return `\n## Declared optional peer ranges\n\nAdapters import framework packages only for types, so each declared peer range covers the observed current major above plus older majors that share the adapter's middleware contract. The current majors are exercised by the integration suite; older majors are accepted by the same adapter API and must be exercised before release.\n\n| Peer package | Declared range |\n| --- | --- |\n${entries.map(([name, range]) => `| ${name} | ${String(range).replaceAll('|', '\\|')} |`).join('\n')}\n`;
 }
 
 async function fetchJsonFromUrl(url) {
@@ -207,18 +213,19 @@ function parseArgs(args) {
   if (print !== undefined && !packageNames[print]) fail('--print requires a known compatibility key');
   return { write, print };
 }
-async function readDeclaredNodeRange() {
+async function readPackageManifest() {
   const packagePath = resolve(dirname(fileURLToPath(import.meta.url)), '../package.json');
-  return JSON.parse(await readFile(packagePath, 'utf8')).engines?.node;
+  return JSON.parse(await readFile(packagePath, 'utf8'));
 }
 export async function runCli(args, {
   collect = collectOfficialMetadata, now, packageNodeRange, mkdir: makeDirectory = mkdir, writeFile: write = writeFile,
   output = resolve(dirname(fileURLToPath(import.meta.url)), '../docs/compatibility.md'), stdout = (line) => process.stdout.write(line),
 } = {}) {
   const { write: shouldWrite, print } = parseArgs(args);
-  const range = packageNodeRange ?? await readDeclaredNodeRange();
+  const manifest = await readPackageManifest();
+  const range = packageNodeRange ?? manifest.engines?.node;
   const evidence = evaluateCompatibility(await collect(), { now, packageNodeRange: range });
-  if (shouldWrite) { await makeDirectory(dirname(output), { recursive: true }); await write(output, renderCompatibilityMarkdown(evidence)); }
+  if (shouldWrite) { await makeDirectory(dirname(output), { recursive: true }); await write(output, renderCompatibilityMarkdown(evidence, manifest.peerDependencies)); }
   if (print !== undefined) stdout(`${evidence.versions[print]}\n`);
   else stdout(`Compatibility verified: Node ${evidence.node.range}; ${Object.entries(evidence.versions).map(([key, version]) => `${key} ${version}`).join(', ')}\n`);
   return evidence;

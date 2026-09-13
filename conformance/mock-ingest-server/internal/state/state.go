@@ -13,6 +13,7 @@ type ResponseSpec struct {
 	Body                    string            `json:"body"`
 	DelayMS                 int               `json:"delay_ms,omitempty"`
 	DisconnectBeforeHeaders bool              `json:"disconnect_before_headers,omitempty"`
+	DisconnectAfterHeaders  bool              `json:"disconnect_after_headers,omitempty"`
 }
 
 // RequestRecord is an immutable journal entry returned from State snapshots.

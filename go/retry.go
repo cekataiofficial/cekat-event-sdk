@@ -3,12 +3,16 @@ package cekat
 import (
 	"context"
 	"math/rand/v2"
+	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const (
 	initialRetryMaximum            = 100 * time.Millisecond
 	maximumRetryMaximum            = time.Second
+	maximumRetryAfter              = 5 * time.Second
 	retryCountAttemptBoundsMessage = "retry count must be no greater than maximum int minus one so total attempts are representable"
 )
 
@@ -20,6 +24,44 @@ func retryAttempts(retryCount int) (int, bool) {
 		return 0, false
 	}
 	return retryCount + 1, true
+}
+
+// retryableStatus reports whether an HTTP status is transient.
+func retryableStatus(status int) bool {
+	switch status {
+	case http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// parseRetryAfter parses a Retry-After header as delta-seconds or an HTTP-date.
+// Past dates yield zero; invalid values report false.
+func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if strings.Trim(value, "0123456789") == "" {
+		if len(value) > 9 {
+			// Anything this large exceeds the retry cap; avoid duration overflow.
+			return time.Duration(1<<63 - 1), true
+		}
+		seconds, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, false
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	date, err := http.ParseTime(value)
+	if err != nil {
+		return 0, false
+	}
+	if delay := date.Sub(now); delay > 0 {
+		return delay, true
+	}
+	return 0, true
 }
 
 func defaultSleep(ctx context.Context, duration time.Duration) error {

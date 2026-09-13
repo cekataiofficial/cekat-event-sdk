@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "id": "retry-no-429",
-  "description": "HTTP 429 is permanent and is not retried.",
-  "kind": "retry",
+  "id": "success-body-interrupted",
+  "description": "A 200 whose body read fails is a known-outcome decode error and is never retried.",
+  "kind": "success",
   "operation": {
     "name": "order_paid",
     "event": {
@@ -14,19 +14,18 @@
   },
   "responses": [
     {
-      "status": 429,
-      "body": "not an error envelope"
+      "status": 200,
+      "body": "{\"success\":tr",
+      "disconnect_after_headers": true
     }
   ],
   "client": {
     "retry_count": 2
   },
   "expect": {
-    "result": "api_error",
+    "result": "response_decode_error",
     "attempts": 1,
     "delivery_outcome_unknown": false,
-    "status": 429,
-    "error_message": "Too Many Requests",
     "request": {
       "path": "/api/events/ingest",
       "authorization": "Bearer conformance-token",

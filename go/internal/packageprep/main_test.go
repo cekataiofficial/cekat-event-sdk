@@ -106,6 +106,73 @@ func TestPrepareWritesDeterministicManifestAndTokenFreeArchive(t *testing.T) {
 	}
 }
 
+func TestPrepareWritesOneArchivePerPublishableModule(t *testing.T) {
+	moduleRoot := testModule(t)
+	for path, contents := range map[string]string{
+		"middleware/gin/go.mod":        "module github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin\n\ngo 1.25.0\n",
+		"middleware/gin/go.sum":        "",
+		"middleware/gin/middleware.go": "package gin\n",
+		"internal/conformance/go.mod":  "module github.com/cekataiofficial/cekat-event-sdk-go/internal/conformance\n\ngo 1.22\n",
+		"internal/conformance/case.go": "package conformance\n",
+		"internal/shared/shared.go":    "package shared\n",
+	} {
+		fullPath := filepath.Join(moduleRoot, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git(t, moduleRoot, "add", ".")
+	output := t.TempDir()
+	if err := prepare(packageVersion, output, moduleRoot); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	manifestBytes, err := os.ReadFile(filepath.Join(output, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest packageManifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{
+		"cekat-event-sdk-go-middleware-gin-v0.1.0.zip": {
+			"github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin@v0.1.0/go.mod",
+			"github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin@v0.1.0/go.sum",
+			"github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin@v0.1.0/middleware.go",
+		},
+		"cekat-event-sdk-go-v0.1.0.zip": {
+			"github.com/cekataiofficial/cekat-event-sdk-go@v0.1.0/README.md",
+			"github.com/cekataiofficial/cekat-event-sdk-go@v0.1.0/client.go",
+			"github.com/cekataiofficial/cekat-event-sdk-go@v0.1.0/go.mod",
+			"github.com/cekataiofficial/cekat-event-sdk-go@v0.1.0/internal/shared/shared.go",
+			"github.com/cekataiofficial/cekat-event-sdk-go@v0.1.0/nested/source.go",
+		},
+	}
+	if len(manifest.Artifacts) != len(want) || manifest.Artifacts[0].Path != "cekat-event-sdk-go-middleware-gin-v0.1.0.zip" {
+		t.Fatalf("artifacts = %#v, want sorted core and gin archives without internal modules", manifest.Artifacts)
+	}
+	for _, artifact := range manifest.Artifacts {
+		contents, err := os.ReadFile(filepath.Join(output, artifact.Path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		archive, err := zip.NewReader(bytes.NewReader(contents), int64(len(contents)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, file := range archive.File {
+			names = append(names, file.Name)
+		}
+		if strings.Join(names, "\n") != strings.Join(want[artifact.Path], "\n") {
+			t.Errorf("%s entries = %v, want %v", artifact.Path, names, want[artifact.Path])
+		}
+	}
+}
+
 func TestPackageScriptRejectsInvalidArgumentsAndUnsafeOutputs(t *testing.T) {
 	output := t.TempDir()
 	nonempty := t.TempDir()
@@ -151,7 +218,7 @@ func TestPackageScriptIsNoPublishWrapper(t *testing.T) {
 		t.Fatalf("read package script: %v", err)
 	}
 	contents := string(script)
-	for _, required := range []string{"go test ./...", "go vet ./...", "go run ./internal/packageprep"} {
+	for _, required := range []string{"go test ./...", "go vet ./...", "middleware/gin", "internal/conformance", "go run ./internal/packageprep"} {
 		if !strings.Contains(contents, required) {
 			t.Errorf("package script does not run %q", required)
 		}
@@ -222,6 +289,11 @@ func TestREADMEContract(t *testing.T) {
 		"middleware/echo",
 		"middleware/fiber",
 		"middleware/chi",
+		"c.Request.Context()",
+		"c.Context()",
+		"context.WithoutCancel",
+		"Retry-After",
+		"EventID",
 		"errors.As",
 		"context.Canceled",
 		"duplicate",

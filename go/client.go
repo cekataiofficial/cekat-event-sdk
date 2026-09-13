@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
+
+	"github.com/cekataiofficial/cekat-event-sdk-go/internal/retryobserver"
 )
 
 const ingestPath = "/api/events/ingest"
@@ -42,10 +45,24 @@ func (c *Client) track(ctx context.Context, eventKey string, isCommon bool, even
 	if err != nil {
 		return nil, err
 	}
-	return c.deliver(ctx, payload)
+	// The body is encoded once so every retry sends the same event ID and timestamp.
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, &ValidationError{Message: "event payload is not JSON-compatible"}
+	}
+	return c.deliver(ctx, body)
 }
 
-func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledgement, error) {
+// attemptResult is the outcome of one HTTP attempt.
+type attemptResult struct {
+	acknowledgement *Acknowledgement
+	err             error
+	retryable       bool
+	retryAfter      time.Duration
+	hasRetryAfter   bool
+}
+
+func (c *Client) deliver(ctx context.Context, body []byte) (*Acknowledgement, error) {
 	attempts, ok := retryAttempts(c.config.retryCount)
 	if !ok {
 		return nil, &ValidationError{Message: retryCountAttemptBoundsMessage}
@@ -54,19 +71,24 @@ func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledge
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		acknowledgement, err, retryable := c.doAttempt(ctx, payload, attempt)
-		if err == nil {
-			return acknowledgement, nil
+		result := c.doAttempt(ctx, body, attempt)
+		if result.err == nil {
+			return result.acknowledgement, nil
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !retryable || attempt == attempts {
-			return nil, err
+		if !result.retryable || attempt == attempts {
+			return nil, result.err
 		}
-		max := retryMaximum(attempt)
-		delay := c.config.jitter(max)
-		observeRetryDelay(ctx, delay)
+		if result.hasRetryAfter && result.retryAfter > maximumRetryAfter {
+			return nil, result.err
+		}
+		delay := c.config.jitter(retryMaximum(attempt))
+		if result.hasRetryAfter && result.retryAfter > delay {
+			delay = result.retryAfter
+		}
+		retryobserver.Observe(ctx, delay)
 		if err := c.config.sleep(ctx, delay); err != nil {
 			return nil, ctx.Err()
 		}
@@ -74,19 +96,16 @@ func (c *Client) deliver(ctx context.Context, payload wirePayload) (*Acknowledge
 	panic("unreachable")
 }
 
-func (c *Client) doAttempt(ctx context.Context, payload wirePayload, attempt int) (*Acknowledgement, error, bool) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, &ValidationError{Message: "event payload is not JSON-compatible"}, false
-	}
+func (c *Client) doAttempt(ctx context.Context, body []byte, attempt int) attemptResult {
 	attemptContext, cancel := context.WithTimeout(ctx, c.config.timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(attemptContext, http.MethodPost, c.config.baseURL+ingestPath, bytes.NewReader(body))
 	if err != nil {
-		return nil, &TransportError{Message: "failed to create request", Attempts: attempt, Cause: err}, false
+		return attemptResult{err: &TransportError{Message: "failed to create request", Attempts: attempt, Cause: err}}
 	}
 	request.Header.Set("Authorization", "Bearer "+c.accessToken)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("User-Agent", userAgent)
 
 	httpClient := *c.config.httpClient
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -95,20 +114,29 @@ func (c *Client) doAttempt(ctx context.Context, payload wirePayload, attempt int
 	response, err := httpClient.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err(), false
+			return attemptResult{err: ctx.Err()}
 		}
-		return nil, &TransportError{
-			Message:                "Cekat API request failed before a response was received",
-			Attempts:               attempt,
-			DeliveryOutcomeUnknown: true,
-			Cause:                  err,
-		}, true
+		return attemptResult{
+			err: &TransportError{
+				Message:                "Cekat API request failed before a response was received",
+				Attempts:               attempt,
+				DeliveryOutcomeUnknown: true,
+				Cause:                  err,
+			},
+			retryable: true,
+		}
 	}
 	defer response.Body.Close()
 
+	// Retry is decided by status alone: a body read failure on a received 200 is a
+	// decode error (the event was accepted), while a retryable status stays retryable.
 	acknowledgement, err := decodeResponse(response.StatusCode, response.Body, attempt)
 	if err != nil {
-		return nil, err, response.StatusCode == http.StatusInternalServerError
+		result := attemptResult{err: err, retryable: retryableStatus(response.StatusCode)}
+		if result.retryable {
+			result.retryAfter, result.hasRetryAfter = parseRetryAfter(response.Header.Get("Retry-After"), time.Now())
+		}
+		return result
 	}
-	return acknowledgement, nil, false
+	return attemptResult{acknowledgement: acknowledgement}
 }

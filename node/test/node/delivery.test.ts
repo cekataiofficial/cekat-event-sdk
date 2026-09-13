@@ -7,7 +7,9 @@ import {
   ResponseDecodeError,
   TransportError,
 } from '../../src/node/errors.js';
-import { deliver, type DeliveryConfig, type DeliveryDependencies } from '../../src/node/delivery.js';
+import { deliver, parseRetryAfterMs, retryDelayBoundMs, type DeliveryConfig, type DeliveryDependencies } from '../../src/node/delivery.js';
+import { SDK_VERSION } from '../../src/node/version.js';
+import packageManifest from '../../package.json' with { type: 'json' };
 
 const config: DeliveryConfig = {
   url: 'https://server.example/api/events/ingest',
@@ -15,7 +17,7 @@ const config: DeliveryConfig = {
   timeoutMs: 10_000,
   retryCount: 2,
 };
-const payload = { event_key: 'order_paid', is_common: true, email: 'ada@example.test' };
+const payload = { event_key: 'order_paid', event_id: 'evt-1', occurred_at: '2026-09-13T01:15:30.250Z', is_common: true, email: 'ada@example.test' };
 const success = JSON.stringify({
   success: true,
   data: { success: true, message: 'accepted', event_key: 'order_paid', validated_properties: ['order_id'] },
@@ -25,7 +27,7 @@ function dependencies(fetch: DeliveryDependencies['fetch'], overrides: Partial<D
   return { fetch, sleep: vi.fn(async () => undefined), random: () => 0, ...overrides };
 }
 
-function response(status: number, body: string | Uint8Array | null, statusText = ''): Response {
+function response(status: number, body: string | Uint8Array | null, statusText = '', headers: Record<string, string> = {}): Response {
   const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
   const stream = bytes === null ? null : new ReadableStream<Uint8Array>({
     start(controller) {
@@ -33,7 +35,7 @@ function response(status: number, body: string | Uint8Array | null, statusText =
       controller.close();
     },
   });
-  return new Response(stream, { status, statusText });
+  return new Response(stream, { status, statusText, headers });
 }
 
 function chunkedResponse(status: number, chunks: Uint8Array[]): Response {
@@ -62,10 +64,14 @@ describe('deliver protocol and bounded bodies', () => {
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith(config.url, expect.objectContaining({
       method: 'POST',
-      headers: { authorization: `Bearer ${config.accessToken}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${config.accessToken}`, 'content-type': 'application/json', 'user-agent': `cekat-event-sdk-node/${SDK_VERSION} node/${process.versions.node}` },
       body: JSON.stringify(payload),
     }));
     expect(ack).toEqual({ success: true, message: 'accepted', eventKey: 'order_paid', validatedProperties: ['order_id'], rawBody: success });
+  });
+
+  it('reports the package version in the User-Agent', () => {
+    expect(SDK_VERSION).toBe(packageManifest.version);
   });
 
   it('accepts an exact 65,536-byte body at EOF, but detects byte 65,537 and retains exactly the prefix', async () => {
@@ -122,7 +128,7 @@ describe('deliver protocol and bounded bodies', () => {
   it('maps conforming and malformed non-200 responses while retaining raw text', async () => {
     const conforming = JSON.stringify({ success: false, error: 'bad event', code: 'bad_event' });
     const cases: readonly [number, new (...args: never[]) => Error][] = [
-      [400, ApiError as never], [401, AuthenticationError as never], [404, EventDefinitionNotFoundError as never], [429, ApiError as never],
+      [400, ApiError as never], [401, AuthenticationError as never], [404, EventDefinitionNotFoundError as never], [422, ApiError as never],
     ];
     for (const [status, ErrorType] of cases) {
       const error = await rejected(() => deliver(config, payload, {}, dependencies(async () => response(status, conforming, 'Fallback'))));
@@ -149,16 +155,78 @@ describe('deliver retry, timeout, redaction, and cancellation', () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 200);
   });
 
-  it('does not retry received statuses other than exact 500', async () => {
-    const fetch = vi.fn(async () => response(503, JSON.stringify({ success: false, error: 'unavailable' })));
+  it('uses capped exponential full-jitter bounds', () => {
+    expect([1, 2, 3, 4, 5, 6, 50].map(retryDelayBoundMs)).toEqual([100, 200, 400, 800, 1_000, 1_000, 1_000]);
+  });
+
+  it.each([429, 500, 502, 503, 504])('retries transient status %i and resends the identical body', async (status) => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(status, 'transient'))
+      .mockResolvedValueOnce(response(200, success));
+    await expect(deliver(config, payload, {}, dependencies(fetch))).resolves.toMatchObject({ eventKey: 'order_paid' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0]?.[1]?.body).toBe(fetch.mock.calls[1]?.[1]?.body);
+  });
+
+  it.each([400, 401, 404, 409, 422, 501])('does not retry non-transient status %i', async (status) => {
+    const fetch = vi.fn(async () => response(status, JSON.stringify({ success: false, error: 'permanent' })));
     const sleep = vi.fn(async () => undefined);
-    const error = await rejected(() => deliver(config, payload, {}, dependencies(fetch, { sleep })));
-    expect(error).toBeInstanceOf(ApiError);
+    await rejected(() => deliver(config, payload, {}, dependencies(fetch, { sleep })));
     expect(fetch).toHaveBeenCalledOnce();
     expect(sleep).not.toHaveBeenCalled();
   });
 
-  it('retries each 10-second SDK timeout and returns an unknown-outcome TransportError without token leakage', async () => {
+  it('waits for the larger of jitter and Retry-After, and stops when Retry-After exceeds five seconds', async () => {
+    const sleep = vi.fn(async () => undefined);
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(429, 'slow down', '', { 'retry-after': '2' }))
+      .mockResolvedValueOnce(response(503, 'slow down', '', { 'retry-after': 'soon' }))
+      .mockResolvedValueOnce(response(200, success));
+    await expect(deliver(config, payload, {}, dependencies(fetch, { sleep, random: () => 0.5 }))).resolves.toMatchObject({ eventKey: 'order_paid' });
+    expect(sleep).toHaveBeenNthCalledWith(1, 2_000);
+    expect(sleep).toHaveBeenNthCalledWith(2, 100);
+
+    const capped = vi.fn(async () => response(503, 'maintenance', 'Service Unavailable', { 'retry-after': '6' }));
+    const cappedSleep = vi.fn(async () => undefined);
+    const error = await rejected(() => deliver(config, payload, {}, dependencies(capped, { sleep: cappedSleep })));
+    expect(error).toMatchObject({ name: 'ApiError', status: 503, attempts: 1, message: 'Service Unavailable', rawBody: 'maintenance' });
+    expect(capped).toHaveBeenCalledOnce();
+    expect(cappedSleep).not.toHaveBeenCalled();
+  });
+
+  it('parses Retry-After delta-seconds and HTTP-dates only', () => {
+    const now = Date.parse('2026-09-13T01:00:00Z');
+    expect(parseRetryAfterMs(null, now)).toBeUndefined();
+    expect(parseRetryAfterMs(' 3 ', now)).toBe(3_000);
+    expect(parseRetryAfterMs('0', now)).toBe(0);
+    expect(parseRetryAfterMs('99999999999999999999', now)).toBe(Number.POSITIVE_INFINITY);
+    expect(parseRetryAfterMs('Sun, 13 Sep 2026 01:00:04 GMT', now)).toBe(4_000);
+    expect(parseRetryAfterMs('Sun, 13 Sep 2026 00:59:00 GMT', now)).toBe(0);
+    for (const invalid of ['-1', '1.5', 'Sun 13 Sep 2026', 'tomorrow', '']) expect(parseRetryAfterMs(invalid, now)).toBeUndefined();
+  });
+
+  it('never retries an accepted 200 whose body read fails', async () => {
+    const broken = () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"success":tr'));
+        controller.error(new Error('socket reset'));
+      },
+    }), { status: 200 });
+    const fetch = vi.fn(async () => broken());
+    const error = await rejected(() => deliver(config, payload, {}, dependencies(fetch)));
+    expect(error).toMatchObject({ name: 'ResponseDecodeError', attempts: 1, deliveryOutcomeUnknown: false });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('keeps status classification when a final non-200 body read fails', async () => {
+    const fetch = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.error(new Error('socket reset')); },
+    }), { status: 502 }));
+    const error = await rejected(() => deliver({ ...config, retryCount: 0 }, payload, {}, dependencies(fetch)));
+    expect(error).toMatchObject({ name: 'ApiError', status: 502, message: 'Bad Gateway', rawBody: '', attempts: 1 });
+  });
+
+  it('retries each SDK timeout and returns an unknown-outcome TransportError without token leakage', async () => {
     vi.useFakeTimers();
     try {
       const fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
@@ -189,16 +257,22 @@ describe('deliver retry, timeout, redaction, and cancellation', () => {
     expect(String((error as Error & { cause: Error }).cause.cause)).not.toContain(config.accessToken);
   });
 
-  it('retries stalled headers/body reads under the per-attempt SDK timeout', async () => {
+  it('retries stalled headers but reports a 200 body stalled past the SDK timeout as a known-outcome decode error', async () => {
     vi.useFakeTimers();
     try {
-      const fetch = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200 }));
-      const outcome = rejected(() => deliver(config, payload, {}, dependencies(fetch)));
+      const stalledHeaders = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      }));
+      const headersOutcome = rejected(() => deliver(config, payload, {}, dependencies(stalledHeaders)));
       await vi.advanceTimersByTimeAsync(30_000);
+      expect(await headersOutcome).toMatchObject({ name: 'TransportError', attempts: 3 });
+      expect(stalledHeaders).toHaveBeenCalledTimes(3);
 
-      const error = await outcome;
-      expect(error).toMatchObject({ name: 'TransportError', attempts: 3 });
-      expect(fetch).toHaveBeenCalledTimes(3);
+      const stalledBody = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200 }));
+      const bodyOutcome = rejected(() => deliver(config, payload, {}, dependencies(stalledBody)));
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await bodyOutcome).toMatchObject({ name: 'ResponseDecodeError', attempts: 1, deliveryOutcomeUnknown: false });
+      expect(stalledBody).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }

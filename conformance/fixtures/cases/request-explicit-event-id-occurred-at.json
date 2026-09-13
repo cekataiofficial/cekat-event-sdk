@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "request-explicit-event-id-occurred-at",
+  "description": "Caller event IDs are trimmed and caller timestamps are normalized to UTC milliseconds.",
+  "kind": "request",
+  "operation": {
+    "name": "custom_event",
+    "event_key": "checkout_started",
+    "event": {
+      "email": "buyer@example.com",
+      "event_id": " evt-checkout-123 ",
+      "occurred_at": "2026-09-13T08:15:30.250+07:00"
+    }
+  },
+  "expect": {
+    "result": "acknowledgement",
+    "attempts": 1,
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "checkout_started",
+        "event_id": "evt-checkout-123",
+        "occurred_at": "2026-09-13T01:15:30.250Z",
+        "is_common": false,
+        "email": "buyer@example.com"
+      }
+    }
+  }
+}

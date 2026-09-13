@@ -9,6 +9,8 @@
   ],
   "properties": {
     "event_key": {"type": "string", "minLength": 1},
+    "event_id": {"type": "string", "minLength": 1},
+    "occurred_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
     "contact_name": {"type": "string"},
     "phone_number": {"type": "string"},
     "email": {"type": "string"},

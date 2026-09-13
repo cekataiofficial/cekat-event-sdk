@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { ValidationError } from './errors.js';
 import type { EventInput, JsonValue, WirePayload } from './types.js';
 
@@ -7,17 +9,31 @@ export function validateAccessToken(accessToken: string): void {
   }
 }
 
+/** Supplies the event ID and call time; injectable so payload tests are deterministic. */
+export interface PayloadClock {
+  now: () => Date;
+  newEventId: () => string;
+}
+
+const systemClock: PayloadClock = { now: () => new Date(), newEventId: randomUUID };
+
 export function buildPayload(
   eventKey: string,
   isCommon: boolean,
   event: EventInput,
   ambientVisitorId?: string,
+  clock: PayloadClock = systemClock,
 ): WirePayload {
   validateEvent(eventKey, event);
 
   const explicitVisitorId = normalizeVisitorId(event.visitorId);
   const visitorId = explicitVisitorId ?? normalizeVisitorId(ambientVisitorId);
-  const payload: WirePayload = { event_key: eventKey, is_common: isCommon };
+  const payload: WirePayload = {
+    event_key: eventKey,
+    event_id: normalizeVisitorId(event.eventId) ?? clock.newEventId(),
+    occurred_at: (event.occurredAt ?? clock.now()).toISOString(),
+    is_common: isCommon,
+  };
 
   if (event.email !== undefined) payload.email = event.email;
   if (event.phoneNumber !== undefined) payload.phone_number = event.phoneNumber;
@@ -29,8 +45,22 @@ export function buildPayload(
 }
 
 function validateEvent(eventKey: string, event: EventInput): void {
-  if (eventKey.trim() === '') {
+  if (typeof eventKey !== 'string' || eventKey.trim() === '') {
     throw new ValidationError('event key must not be blank');
+  }
+  if (typeof event !== 'object' || event === null) {
+    throw new ValidationError('event must be an object');
+  }
+  for (const field of ['email', 'phoneNumber', 'contactName', 'visitorId', 'eventId'] as const) {
+    if (event[field] !== undefined && typeof event[field] !== 'string') {
+      throw new ValidationError(`${field} must be a string`);
+    }
+  }
+  if (event.occurredAt !== undefined) {
+    const year = event.occurredAt instanceof Date ? event.occurredAt.getUTCFullYear() : Number.NaN;
+    if (!(year >= 1 && year <= 9999)) {
+      throw new ValidationError('occurredAt must be a valid Date between years 0001 and 9999');
+    }
   }
   if (event.email?.trim() === '' || event.email === undefined) {
     if (event.phoneNumber?.trim() === '' || event.phoneNumber === undefined) {

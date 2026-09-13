@@ -69,7 +69,7 @@ func newStatusError(statusCode int, message, code string, body []byte, attempts 
 	case http.StatusNotFound:
 		return &EventDefinitionNotFoundError{StatusCode: statusCode, Message: message, Code: code, Body: body, Attempts: attempts}
 	default:
-		return &ApiError{StatusCode: statusCode, Message: message, Code: code, Body: body, Attempts: attempts}
+		return &APIError{StatusCode: statusCode, Message: message, Code: code, Body: body, Attempts: attempts}
 	}
 }
 

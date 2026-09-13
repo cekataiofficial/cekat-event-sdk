@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "retry-429-retry-after-exceeds-cap",
+  "description": "A Retry-After longer than five seconds stops retrying and returns the 429.",
+  "kind": "retry",
+  "operation": {
+    "name": "order_paid",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "order_id": "ord-paid"
+      }
+    }
+  },
+  "responses": [
+    {
+      "status": 429,
+      "headers": {
+        "Retry-After": "120"
+      },
+      "body": "not an error envelope"
+    }
+  ],
+  "client": {
+    "retry_count": 2
+  },
+  "expect": {
+    "result": "api_error",
+    "attempts": 1,
+    "delivery_outcome_unknown": false,
+    "status": 429,
+    "error_message": "Too Many Requests",
+    "request": {
+      "path": "/api/events/ingest",
+      "authorization": "Bearer conformance-token",
+      "payload": {
+        "event_key": "order_paid",
+        "is_common": true,
+        "email": "buyer@example.com",
+        "properties": {
+          "order_id": "ord-paid"
+        }
+      }
+    }
+  }
+}
