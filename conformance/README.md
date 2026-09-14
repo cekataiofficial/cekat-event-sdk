@@ -88,6 +88,14 @@ Applicability is fixture-declared, never runner-selected. The only capability is
 
 PHP and Ruby must discover, schema-validate, and report each cancellation case once as `not_applicable`, naming the declared required capability. They must not claim a general skip, and their configured request timeouts remain supported. All other languages execute the cases through their native caller-cancellation mechanism. Cancellation phases are `before_request`, `during_request`, and `during_backoff`; native cancellation propagates to request execution or interruptible backoff where the runtime supports it.
 
+## Runtime limitations
+
+A limitation is accepted only when a runtime cannot expose the behavior a fixture requires, it is recorded here, and the runner gates it on the exact runtime versions and fixture shape. It never skips a case: the runner still executes and accounts for the fixture, asserts the documented fallback in full, and adds a `runtime_deviation` field to that fixture's `passed` record.
+
+| Runner | Runtime | Fixture shape | Required behavior | Accepted fallback |
+| --- | --- | --- | --- | --- |
+| Node.js SDK | Bun before 1.4.0 | a single queued `200` with `disconnect_after_headers` (`success-body-interrupted`) | `response_decode_error`, 1 attempt | Bun rejects `fetch()` when the connection closes after the headers but before the complete body, so the status is unobservable. The attempt is classified as a transport failure: 2 to `retry_count + 1` requests with identical payload, `event_id`, and `occurred_at`, full-jitter delays, and either a `TransportError` with `delivery_outcome_unknown: true` or a later acknowledgement. Deviation label: `bun-before-1.4-truncated-response`. |
+
 ## Delivery semantics
 
 The default timeout is **3 seconds per network attempt**. Default retry count is 2 after the initial attempt. Retry transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `429`, `500`, `502`, `503`, and `504`. Retry is decided by status alone, so a retryable status whose body cannot be read is still retried. Do not retry other statuses, including `400`, `401`, and `404`.

@@ -8,7 +8,7 @@ The server SDK for Node.js and Bun sends Cekat events through a backend-only acc
 npm install @cekat/event-sdk    # or: bun add @cekat/event-sdk
 ```
 
-Requires Node.js 22.12 or newer, or Bun 1.4.0 or newer. The same package runs on both; see [Bun](#bun). The package is ESM and also loads from CommonJS through `require()` (for example in default NestJS projects). The Node client is exported from both `@cekat/event-sdk` and `@cekat/event-sdk/node`.
+Requires Node.js 22.12 or newer, or Bun 1.2.5 or newer. The same package runs on both; see [Bun](#bun). The package is ESM and also loads from CommonJS through `require()` (for example in default NestJS projects). The Node client is exported from both `@cekat/event-sdk` and `@cekat/event-sdk/node`.
 
 | Framework adapter | Supported majors |
 | --- | --- |
@@ -104,7 +104,7 @@ For App Router handlers use `runWithCekatVisitor(request, () => handler())` in t
 
 ## Bun
 
-On Bun 1.4.0 or newer the client, the visitor scope, and the Express, Fastify, Koa, and NestJS adapters run unchanged; their test suites pass with Bun as the runtime. The Next.js helpers' tests also pass on Bun, but whether Next.js itself runs on Bun is up to Next.js. No separate import or build is needed. Bun-native servers pass a Web `Request` to a `fetch` handler, so use `@cekat/event-sdk/fetch`:
+On Bun 1.2.5 or newer the client, the visitor scope, and the Express, Fastify, Koa, and NestJS adapters run unchanged; their test suites pass with Bun as the runtime. The Next.js helpers' tests also pass on Bun, but whether Next.js itself runs on Bun is up to Next.js. No separate import or build is needed. Bun-native servers pass a Web `Request` to a `fetch` handler, so use `@cekat/event-sdk/fetch`:
 
 ```ts
 import { Client } from '@cekat/event-sdk';
@@ -142,7 +142,14 @@ Bun.serve({ fetch: withCekatVisitor(elysiaApp.fetch) });
 
 On Bun, `AsyncLocalStorage` is not restored inside `AbortSignal.timeout()` listeners or `MessagePort` message handlers (it is on Node.js). Calls made from those callbacks send no visitor unless you capture it first and pass it explicitly: `const visitorId = currentVisitorId();` then `cekat.userLogin({ email, visitorId })`. Every other asynchronous boundary the test suite covers behaves as on Node.js.
 
-Bun 1.3 is not supported: it intermittently delivers a stale response to a request after an earlier request timed out. See [docs/compatibility.md](docs/compatibility.md#bun).
+### Bun before 1.4
+
+Bun 1.2.5 through 1.3.x are supported with two differences, both caused by Bun's HTTP client and fixed in Bun 1.4.0:
+
+- **No connection reuse.** Those releases can hand a new request a pooled connection that a server closed mid-response, which makes the request hang, read part of another response, or be sent twice. The SDK therefore opens a new connection for every attempt on Bun before 1.4 (`keepalive: false`). This adds a TCP (and TLS) handshake to each event; keep tracking off the request's critical path as shown above.
+- **A truncated response looks like a network failure.** If the connection closes after Cekat's response headers but before the full body, Bun rejects the request without exposing the status. Instead of `ResponseDecodeError` (received, not retried), the SDK sees a `TransportError`, retries with the same `event_id`, and reports `deliveryOutcomeUnknown: true` if retries are exhausted. A retry may therefore deliver the same event again, as with any network failure. On Bun 1.4.0+ and Node.js the received response is classified exactly.
+
+Bun older than 1.2.5 is not tested. See [docs/compatibility.md](docs/compatibility.md#bun) for the evidence.
 
 ## Errors and delivery outcome
 

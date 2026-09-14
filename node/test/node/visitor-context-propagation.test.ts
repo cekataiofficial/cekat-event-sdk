@@ -97,8 +97,8 @@ describe('visitor scope propagation across asynchronous boundaries', () => {
   });
 
   /**
-   * Bun does not restore AsyncLocalStorage for these native event sources (verified on Bun 1.3.0,
-   * 1.4.0, and 1.4.2). The SDK is unaffected because it reads the visitor synchronously when a call starts; code
+   * Bun does not restore AsyncLocalStorage for these native event sources (verified on Bun 1.2.5,
+   * 1.2.23, 1.3.0, 1.3.14, 1.4.0, and 1.4.2). The SDK is unaffected because it reads the visitor synchronously when a call starts; code
    * that tracks events from such callbacks must capture currentVisitorId() first. README documents it.
    * If a Bun release restores the scope, this test fails so the documentation can be updated.
    */

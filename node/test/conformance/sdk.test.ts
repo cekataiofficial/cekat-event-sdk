@@ -9,6 +9,8 @@ import { ApiError, AuthenticationError, EventDefinitionNotFoundError, ResponseDe
 import { runWithVisitorFromHeaders, runWithVisitorId } from '../../src/node/visitor-context.js';
 import type { BoundedBody } from '../../src/node/body.js';
 import { SDK_VERSION } from '../../src/node/version.js';
+import { isBunBefore14 } from '../../src/node/runtime.js';
+import { retryDelayBoundMs } from '../../src/node/delivery.js';
 
 type Fixture = Record<string, any>;
 type SchemaValidator = (value: unknown) => boolean;
@@ -161,10 +163,10 @@ const CANONICAL_OCCURRED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const USER_AGENT = /^cekat-event-sdk-node\/\d+\.\d+\.\d+\S*( .+)?$/;
 // The runtime token must name the runtime actually executing the SDK: Bun also reports a Node version.
 const RUNTIME_TOKEN = process.versions.bun === undefined ? `node/${process.versions.node}` : `bun/${process.versions.bun}`;
-async function assertJournal(fixture: Fixture, window: { started: number; finished: number }): Promise<void> {
-  const entries = await journal(); expect(entries).toHaveLength(fixture.expect.attempts);
+async function assertJournal(fixture: Fixture, window: { started: number; finished: number }, attempts: number = fixture.expect.attempts): Promise<any[]> {
+  const entries = await journal(); expect(entries).toHaveLength(attempts);
   for (const entry of entries) { expect(entry.headers['user-agent']).toHaveLength(1); expect(entry.headers['user-agent'][0]).toMatch(USER_AGENT); expect(entry.headers['user-agent'][0]).toBe(`cekat-event-sdk-node/${SDK_VERSION} ${RUNTIME_TOKEN}`); }
-  if (fixture.expect.request === undefined) return;
+  if (fixture.expect.request === undefined) return entries;
   const generated = new Map<string, string>();
   for (const [index, entry] of entries.entries()) {
     expect(entry).toMatchObject({ sequence: index + 1, method: 'POST', path: fixture.expect.request.path });
@@ -185,8 +187,45 @@ async function assertJournal(fixture: Fixture, window: { started: number; finish
     }
     expect(actual).toEqual(fixture.expect.request.payload);
   }
+  return entries;
 }
-async function execute(fixture: Fixture): Promise<void> {
+
+/**
+ * Runtime limitation (conformance/README.md, "Runtime limitations"): Bun before 1.4 rejects fetch()
+ * when a connection closes after the headers but before the complete body, so the SDK cannot see the
+ * received 200. Only for that fixture shape on those Bun releases, the runner accepts the documented
+ * fallback: the attempt is classified as a transport failure and retried with the same event_id.
+ */
+const LEGACY_BUN_TRUNCATED_RESPONSE = 'bun-before-1.4-truncated-response';
+function isTruncatedSuccessFixture(fixture: Fixture): boolean {
+  const responses = fixture.responses ?? [];
+  return isBunBefore14() && fixture.expect.result === 'response_decode_error' && responses.length === 1
+    && responses[0].status === 200 && responses[0].disconnect_after_headers === true;
+}
+async function assertLegacyBunTruncatedFallback(fixture: Fixture, result: unknown, error: unknown, delays: number[], window: { started: number; finished: number }): Promise<void> {
+  const maximumAttempts = (fixture.client?.retry_count ?? 2) + 1;
+  const attempts = (await journal()).length;
+  expect(attempts).toBeGreaterThanOrEqual(2);
+  expect(attempts).toBeLessThanOrEqual(maximumAttempts);
+  expect(String(error ?? '')).not.toContain(token);
+  if (error === undefined) {
+    // A retry was answered by the mock's default acknowledgement after the queue emptied.
+    expect(result).toMatchObject({ success: true });
+  } else {
+    expect(error).toBeInstanceOf(TransportError);
+    expect((error as TransportError).attempts).toBe(attempts);
+    expect((error as TransportError).deliveryOutcomeUnknown).toBe(true);
+  }
+  expect(delays).toHaveLength(attempts - 1);
+  for (const [index, delay] of delays.entries()) {
+    expect(delay).toBeGreaterThanOrEqual(0);
+    expect(delay).toBeLessThanOrEqual(retryDelayBoundMs(index + 1));
+  }
+  // Every retry carries the identical payload, event_id, and occurred_at.
+  await assertJournal(fixture, window, attempts);
+}
+/** Executes one fixture; returns a runtime-deviation label when a documented limitation was accepted. */
+async function execute(fixture: Fixture): Promise<string | undefined> {
   await resetAndQueue(fixture);
   const controller = fixture.cancellation === undefined ? undefined : new AbortController();
   const observedBodies: BoundedBody[] = []; const delays: number[] = [];
@@ -215,6 +254,10 @@ async function execute(fixture: Fixture): Promise<void> {
     else if (inbound?.ambient_visitor_id !== undefined) result = await runWithVisitorId(inbound.ambient_visitor_id, invoke); else result = await invoke();
   } catch (caught) { error = caught; }
   const finished = Date.now();
+  if (isTruncatedSuccessFixture(fixture) && !(error instanceof ResponseDecodeError)) {
+    await assertLegacyBunTruncatedFallback(fixture, result, error, delays, { started, finished });
+    return LEGACY_BUN_TRUNCATED_RESPONSE;
+  }
   assertResult(fixture, result, error, observedBodies);
   if (fixture.expect.minimum_retry_delays_ms !== undefined) {
     expect(delays).toHaveLength(fixture.expect.minimum_retry_delays_ms.length);
@@ -228,6 +271,7 @@ async function execute(fixture: Fixture): Promise<void> {
     }
   }
   await assertJournal(fixture, { started, finished });
+  return undefined;
 }
 
 describe('shared fixture schema validation', () => {
@@ -248,7 +292,12 @@ describe.skipIf(!configured)(`shared Node SDK conformance on ${RUNTIME_TOKEN}`, 
   test('validates and executes every directly discovered fixture exactly once', async () => {
     assertOrigin(baseURL, 'CEKAT_CONFORMANCE_BASE_URL'); assertOrigin(controlURL, 'CEKAT_CONFORMANCE_CONTROL_URL');
     const fixtures = await discoverFixtures(fixturesDirectory); const executed = new Set<string>();
-    for (const fixture of fixtures) { await execute(fixture); if (executed.has(fixture.id)) throw new Error(`fixture ${fixture.id} executed more than once`); executed.add(fixture.id); process.stdout.write(`${JSON.stringify({ id: fixture.id, status: 'passed' })}\n`); }
+    for (const fixture of fixtures) {
+      const deviation = await execute(fixture);
+      if (executed.has(fixture.id)) throw new Error(`fixture ${fixture.id} executed more than once`);
+      executed.add(fixture.id);
+      process.stdout.write(`${JSON.stringify(deviation === undefined ? { id: fixture.id, status: 'passed' } : { id: fixture.id, status: 'passed', runtime_deviation: deviation })}\n`);
+    }
     expect(executed).toEqual(new Set(fixtures.map((fixture) => fixture.id)));
   }, 30_000);
 });
