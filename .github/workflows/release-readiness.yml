@@ -16,15 +16,27 @@ concurrency:
 
 jobs:
   preflight:
-    name: Preflight (manifest contract and wrapper tests)
+    name: Preflight (root script tests and compatibility gates)
     runs-on: platform-ci-aws
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: conformance/mock-ingest-server/go.mod
+          cache-dependency-path: conformance/mock-ingest-server/go.sum
       - name: Root script tests
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      # Fails when a supported line has reached end of support or the evidence is more than 30 days old,
+      # so versions are rechecked against official sources before every release.
+      - name: Documentation audit
+        run: python3 scripts/audit-docs.py
+      - name: Compatibility matrix is current
+        run: |
+          python3 scripts/validate-compatibility-matrix.py --as-of "$(date -u +%F)" --max-age-days 30
+          python3 scripts/validate-compatibility-matrix.py --as-of "$(date -u +%F)" --markdown >> "$GITHUB_STEP_SUMMARY"
 
   package:
     name: Package ${{ matrix.language }}

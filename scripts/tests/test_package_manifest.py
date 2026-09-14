@@ -420,9 +420,10 @@ class NoPublishTest(unittest.TestCase):
         self.assertIn('scripts/package-readiness.sh --language "${{ matrix.language }}"', text)
         self.assertIn("validate-package-manifest.py --all", text)
         self.assertIn("actions/upload-artifact@", text)
+        self.assertIn("validate-compatibility-matrix.py --as-of", text)
 
     def test_root_release_scripts_never_publish(self) -> None:
-        for path in (WRAPPER, VALIDATOR, ROOT / ".github" / "workflows" / "ci.yml"):
+        for path in (WRAPPER, VALIDATOR, ROOT / "scripts" / "conformance.py", ROOT / "scripts" / "validate-compatibility-matrix.py", ROOT / ".github" / "workflows" / "ci.yml"):
             with self.subTest(path=path.name):
                 self.assertIsNone(self.FORBIDDEN.search(path.read_text(encoding="utf-8")))
 

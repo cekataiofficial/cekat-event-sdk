@@ -170,7 +170,7 @@ catch (CekatApiException error)
 }
 ```
 
-The SDK makes up to `RetryCount + 1` attempts (3 by default). It retries connection failures, timeouts, and HTTP 429, 500, 502, 503, and 504 — never other statuses. Before retry *n* it waits a random delay between 0 and min(100 ms × 2ⁿ⁻¹, 1 s). A `Retry-After` header raises that delay to the requested value; if the server asks for more than 5 seconds, the SDK stops and throws instead of blocking. A retried event keeps its `EventId`, but a `CekatTransportException` still means the event may have arrived.
+The SDK makes up to `RetryCount + 1` attempts (3 by default). It retries connection failures, timeouts, and HTTP 429, 500, 502, 503, and 504 — never other statuses. Before retry *n* it waits a random delay between 0 and min(100 ms × 2ⁿ⁻¹, 1 s). A `Retry-After` header raises that delay to the requested value; if the server asks for more than 5 seconds, the SDK stops and throws instead of blocking. A retried event keeps its `EventId` (sent as `event_id`), but a `CekatTransportException` still means the event may have arrived.
 
 Cancelling the `CancellationToken` interrupts the request or the retry delay immediately and throws `OperationCanceledException`, with no further attempts. Cancellation during a request leaves the delivery outcome unknown.
 

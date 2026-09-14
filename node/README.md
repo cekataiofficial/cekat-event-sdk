@@ -60,7 +60,7 @@ A successful `Acknowledgement` means the ingest service accepted the event for *
 
 ## Node request visitor context and adapters
 
-`X-Cekat-Visitor-ID` wins over the `_cekat_visitor_id` cookie. Values are trimmed; blank values are absent. For non-framework code, establish a request-local scope explicitly:
+`X-Cekat-Visitor-ID` wins over the `_cekat_visitor_id` cookie. Values are trimmed; blank values are absent. Visitor IDs are untrusted correlation data from the browser: never use them for authentication or authorization. For non-framework code, establish a request-local scope explicitly:
 
 ```ts
 import { runWithVisitorId } from '@cekat/event-sdk/node';
