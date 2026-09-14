@@ -83,7 +83,10 @@ describe('withVisitorRequest', () => {
     setCookie('_cekat_visitor_id=cache-visitor');
     const request = new Request('https://example.test/collect', { cache: 'no-store' });
 
-    expect(withVisitorRequest(request).cache).toBe('no-store');
+    // The helper must keep whatever cache mode the runtime's Request records. Browsers, Node.js, and
+    // Bun 1.3.10+ record 'no-store'; older Bun ignores the option and always reports 'default'.
+    expect(withVisitorRequest(request).cache).toBe(request.cache);
+    if (!('Bun' in globalThis)) expect(request.cache).toBe('no-store');
   });
 
   it('preserves an explicit request visitor header without mutating the request', () => {

@@ -142,8 +142,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The declared engines.bun floor and the latest observed release. Bun 1.3 fails conformance.
-        bun-version: ['1.4.0', '1.4.2']
+        # The declared engines.bun floor, the last release before 1.4 (connection reuse disabled and the
+        # documented truncated-response limitation), and the latest observed release.
+        bun-version: ['1.2.5', '1.3.14', '1.4.2']
     defaults:
       run:
         working-directory: node

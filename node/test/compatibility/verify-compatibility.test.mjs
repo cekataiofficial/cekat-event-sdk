@@ -45,7 +45,7 @@ function fixtures() {
   return {
     nodeSchedule,
     nodeIndex,
-    bun: metadata(['1.2.23', '1.3.0', '1.3.14', '1.4.0', '1.4.2', '1.5.0-canary.1']),
+    bun: metadata(['1.2.5', '1.2.23', '1.3.0', '1.3.14', '1.4.0', '1.4.2', '1.5.0-canary.1']),
     packages: {
       typescript: metadata(['5.8.3', '5.9.3'], engines(['5.8.3', '5.9.3'])),
       vitest: metadata(['3.2.4'], engines(['3.2.4'])),
@@ -172,7 +172,7 @@ test('collects official sources and propagates thrown or malformed npm metadata 
   assert.match(writes[0].content, /\| express \| \^4\.17\.0 \\\|\\\| \^5\.0\.0 \|/);
   assert.deepEqual(stdout, ['12.1.0\n']);
   // The declared engines.bun range comes from package.json.
-  assert.match(writes[0].content, /\| Bun \| 1\.4\.2 \| >=1\.4\.0 \|/);
+  assert.match(writes[0].content, /\| Bun \| 1\.4\.2 \| >=1\.2\.5 \|/);
 
   await assert.rejects(
     () => collectOfficialMetadata({ fetchJson: async () => { throw new Error('network unavailable'); }, npmView: npmViewForFixture }),
