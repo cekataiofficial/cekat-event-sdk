@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cekat.ai/event-sdk/release/package-manifest.schema.json",
+  "title": "Cekat event SDK package manifest",
+  "description": "manifest.json written by <language>/scripts/package. This schema documents the shape; scripts/validate-package-manifest.py is the executable authority and also checks rules JSON Schema cannot express: artifacts sorted by UTF-8 bytes, unique and safe paths, the exact set of regular files in the output directory, sizes, and SHA-256 hashes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "language",
+    "version",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "language": {
+      "enum": [
+        "go",
+        "node",
+        "python",
+        "php",
+        "java",
+        "dotnet",
+        "ruby"
+      ]
+    },
+    "version": {
+      "const": "0.1.0"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256",
+          "size_bytes"
+        ],
+        "properties": {
+          "path": {
+            "description": "Slash-separated path relative to the manifest's directory, without empty, '.', or '..' components.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!\\.{1,2}(?:/|$))(?!.*/\\.{1,2}(?:/|$))[^/\\\\\\u0000]+(?:/[^/\\\\\\u0000]+)*$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

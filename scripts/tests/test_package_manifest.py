@@ -1,0 +1,431 @@
+"""Tests for scripts/validate-package-manifest.py, scripts/package-readiness.sh, and the release workflow.
+
+Run from the repository root: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+"""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+VALIDATOR = ROOT / "scripts" / "validate-package-manifest.py"
+WRAPPER = ROOT / "scripts" / "package-readiness.sh"
+WORKFLOW = ROOT / ".github" / "workflows" / "release-readiness.yml"
+SCHEMA = ROOT / "ci" / "package-manifest.schema.json"
+LANGUAGES = ("go", "node", "python", "php", "java", "dotnet", "ruby")
+
+_spec = importlib.util.spec_from_file_location("validate_package_manifest", VALIDATOR)
+assert _spec is not None and _spec.loader is not None
+validator = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = validator
+_spec.loader.exec_module(validator)
+
+
+def write_package(output: Path, language: str, files: dict[str, bytes], **overrides: object) -> Path:
+    """Write artifact files and a valid manifest for them; overrides replace top-level manifest keys."""
+    output.mkdir(parents=True, exist_ok=True)
+    artifacts = []
+    for path in sorted(files, key=lambda value: value.encode("utf-8")):
+        target = output / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(files[path])
+        artifacts.append({"path": path, "sha256": hashlib.sha256(files[path]).hexdigest(), "size_bytes": len(files[path])})
+    manifest = {"schema_version": 1, "language": language, "version": "0.1.0", "artifacts": artifacts}
+    manifest.update(overrides)
+    (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return output / "manifest.json"
+
+
+def read_manifest(path: Path) -> dict[str, object]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+class ManifestValidatorTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def assertInvalid(self, manifest: Path, message: str, language: str = "node") -> None:
+        with self.assertRaisesRegex(validator.ManifestError, message):
+            validator.validate_manifest(manifest, language=language)
+
+    def rewrite(self, manifest: Path, mutate) -> None:
+        document = read_manifest(manifest)
+        mutate(document)
+        manifest.write_text(json.dumps(document), encoding="utf-8")
+
+    def test_accepts_every_language_with_flat_and_nested_artifacts(self) -> None:
+        for language in LANGUAGES:
+            files = {"b.pkg": b"bee", "a/nested/x.jar": b"x" * 5, ".hidden-name": b"h"}
+            manifest = write_package(self.root / language, language, files)
+            artifacts = validator.validate_manifest(manifest, language=language)
+            self.assertEqual([artifact.path for artifact in artifacts], [".hidden-name", "a/nested/x.jar", "b.pkg"])
+
+    def test_rejects_wrong_top_level_values(self) -> None:
+        manifest = write_package(self.root / "node", "node", {"a.tgz": b"a"})
+        cases = [
+            (lambda d: d.update(schema_version=2), "schema_version"),
+            (lambda d: d.update(schema_version=True), "schema_version"),
+            (lambda d: d.update(schema_version=1.0), "schema_version"),
+            (lambda d: d.update(language="rust"), "language must be one of"),
+            (lambda d: d.update(language="go"), "expected 'node'"),
+            (lambda d: d.update(version="0.1.1"), "version"),
+            (lambda d: d.update(extra=True), "unknown \\['extra'\\]"),
+            (lambda d: d.pop("artifacts"), "missing \\['artifacts'\\]"),
+            (lambda d: d.update(artifacts=[]), "non-empty array"),
+            (lambda d: d.update(artifacts={}), "non-empty array"),
+        ]
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                write_package(self.root / "node", "node", {"a.tgz": b"a"})
+                self.rewrite(manifest, mutate)
+                self.assertInvalid(manifest, message)
+
+    def test_rejects_invalid_artifact_entries(self) -> None:
+        digest = hashlib.sha256(b"a").hexdigest()
+        cases = [
+            ({"path": "a.tgz", "sha256": digest}, "exactly path, sha256, and size_bytes"),
+            ({"path": "a.tgz", "sha256": digest, "size_bytes": 1, "mode": 1}, "exactly path, sha256, and size_bytes"),
+            ({"path": "a.tgz", "sha256": digest.upper(), "size_bytes": 1}, "lowercase hexadecimal"),
+            ({"path": "a.tgz", "sha256": digest[:63], "size_bytes": 1}, "lowercase hexadecimal"),
+            ({"path": "a.tgz", "sha256": digest, "size_bytes": 0}, "at least 1"),
+            ({"path": "a.tgz", "sha256": digest, "size_bytes": "1"}, "at least 1"),
+            ({"path": "a.tgz", "sha256": digest, "size_bytes": True}, "at least 1"),
+        ]
+        for artifact, message in cases:
+            with self.subTest(message=message, artifact=artifact):
+                manifest = write_package(self.root / "node", "node", {"a.tgz": b"a"}, artifacts=[artifact])
+                self.assertInvalid(manifest, message)
+
+    def test_rejects_unsafe_duplicate_and_unsorted_paths(self) -> None:
+        digest = hashlib.sha256(b"a").hexdigest()
+        for path, message in [
+            ("", "non-empty string"),
+            ("/abs.tgz", "must be relative"),
+            ("../escape.tgz", "'..'"),
+            ("a/./b.tgz", "'.'"),
+            ("a//b.tgz", "empty"),
+            ("dir/", "empty"),
+            ("a\\b.tgz", "backslash"),
+            ("a" + chr(0) + ".tgz", "NUL"),
+            ("manifest.json", "must not list itself"),
+        ]:
+            with self.subTest(path=path):
+                manifest = write_package(self.root / "node", "node", {"a.tgz": b"a"}, artifacts=[{"path": path, "sha256": digest, "size_bytes": 1}])
+                self.assertInvalid(manifest, message)
+
+        entry = {"path": "a.tgz", "sha256": digest, "size_bytes": 1}
+        manifest = write_package(self.root / "dup", "node", {"a.tgz": b"a"}, artifacts=[entry, entry])
+        self.assertInvalid(manifest, "unique")
+
+        files = {"B.tgz": b"b", "a.tgz": b"a"}
+        manifest = write_package(self.root / "unsorted", "node", files)
+        self.rewrite(manifest, lambda d: d["artifacts"].reverse())
+        self.assertInvalid(manifest, "sorted")
+
+    def test_sorting_uses_utf8_bytes(self) -> None:
+        files = {"Z.tgz": b"z", "a.tgz": b"a", "é.tgz": b"e"}
+        manifest = write_package(self.root / "node", "node", files)
+        self.assertEqual([artifact.path for artifact in validator.validate_manifest(manifest, language="node")], ["Z.tgz", "a.tgz", "é.tgz"])
+
+    def test_rejects_duplicate_keys_non_json_numbers_and_invalid_documents(self) -> None:
+        manifest = write_package(self.root / "node", "node", {"a.tgz": b"a"})
+        text = manifest.read_text(encoding="utf-8")
+        manifest.write_text(text.replace('"schema_version": 1,', '"schema_version": 1, "schema_version": 1,'), encoding="utf-8")
+        self.assertInvalid(manifest, "repeats the key")
+        manifest.write_text(text.replace('"schema_version": 1', '"schema_version": NaN'), encoding="utf-8")
+        self.assertInvalid(manifest, "non-JSON number")
+        manifest.write_text("[]", encoding="utf-8")
+        self.assertInvalid(manifest, "JSON object")
+        manifest.write_text("{", encoding="utf-8")
+        self.assertInvalid(manifest, "not valid JSON")
+        manifest.write_bytes(b"\xff")
+        self.assertInvalid(manifest, "UTF-8")
+
+    def test_requires_exact_file_set_sizes_and_hashes(self) -> None:
+        manifest = write_package(self.root / "node", "node", {"a.tgz": b"abc", "nested/b.tgz": b"b"})
+        (self.root / "node" / "nested" / "unlisted.txt").write_text("x")
+        self.assertInvalid(manifest, "does not list: \\['nested/unlisted.txt'\\]")
+
+        manifest = write_package(self.root / "missing", "node", {"a.tgz": b"abc"})
+        (self.root / "missing" / "a.tgz").unlink()
+        self.assertInvalid(manifest, "missing or not regular files")
+
+        manifest = write_package(self.root / "size", "node", {"a.tgz": b"abc"})
+        (self.root / "size" / "a.tgz").write_bytes(b"abcd")
+        self.assertInvalid(manifest, "is 4 bytes, manifest says 3")
+
+        manifest = write_package(self.root / "hash", "node", {"a.tgz": b"abc"})
+        (self.root / "hash" / "a.tgz").write_bytes(b"xyz")
+        self.assertInvalid(manifest, "SHA-256 does not match")
+
+    def test_rejects_symlinks_and_non_regular_files(self) -> None:
+        manifest = write_package(self.root / "node", "node", {"a.tgz": b"a"})
+        outside = self.root / "outside.tgz"
+        outside.write_bytes(b"a")
+        (self.root / "node" / "a.tgz").unlink()
+        (self.root / "node" / "a.tgz").symlink_to(outside)
+        self.assertInvalid(manifest, "symbolic link: a.tgz")
+
+        manifest = write_package(self.root / "dirlink", "node", {"a.tgz": b"a"})
+        (self.root / "dirlink" / "linked").symlink_to(self.root / "node", target_is_directory=True)
+        self.assertInvalid(manifest, "symbolic link: linked")
+
+        manifest = write_package(self.root / "fifo", "node", {"a.tgz": b"a"})
+        os.mkfifo(self.root / "fifo" / "pipe")
+        self.assertInvalid(manifest, "non-regular file: pipe")
+
+        real = write_package(self.root / "real", "node", {"a.tgz": b"a"})
+        linked_manifest_dir = self.root / "linked-manifest"
+        linked_manifest_dir.mkdir()
+        (linked_manifest_dir / "manifest.json").symlink_to(real)
+        self.assertInvalid(linked_manifest_dir / "manifest.json", "regular file")
+        self.assertInvalid(self.root / "absent" / "manifest.json", "does not exist")
+        self.assertInvalid(self.root / "real" / "a.tgz", "must be named manifest.json")
+
+    def test_aggregate_requires_exactly_seven_valid_language_directories(self) -> None:
+        aggregate = self.root / "aggregate"
+        for language in LANGUAGES:
+            write_package(aggregate / language, language, {f"{language}.pkg": language.encode()})
+        self.assertEqual(list(validator.validate_all(aggregate)), list(LANGUAGES))
+
+        shutil.rmtree(aggregate / "ruby")
+        with self.assertRaisesRegex(validator.ManifestError, "missing \\['ruby'\\]"):
+            validator.validate_all(aggregate)
+        write_package(aggregate / "ruby", "ruby", {"ruby.pkg": b"ruby"})
+
+        (aggregate / "rust").mkdir()
+        with self.assertRaisesRegex(validator.ManifestError, "unexpected \\['rust'\\]"):
+            validator.validate_all(aggregate)
+        (aggregate / "rust").rmdir()
+
+        self.rewrite(aggregate / "java" / "manifest.json", lambda d: d.update(language="go"))
+        with self.assertRaisesRegex(validator.ManifestError, "java: language is 'go'"):
+            validator.validate_all(aggregate)
+
+    def test_command_line_exit_codes_and_markdown(self) -> None:
+        manifest = write_package(self.root / "go", "go", {"go.zip": b"go"})
+        run = lambda *arguments: subprocess.run([sys.executable, str(VALIDATOR), *arguments], capture_output=True, text=True, check=False)
+        self.assertEqual(run("--help").returncode, 0)
+        ok = run(str(manifest), "--language", "go", "--version", "0.1.0")
+        self.assertEqual((ok.returncode, ok.stdout.strip().startswith("go: 1 artifact(s) verified")), (0, True))
+        self.assertEqual(run(str(manifest), "--language", "node", "--version", "0.1.0").returncode, 1)
+        self.assertEqual(run(str(manifest), "--language", "go", "--version", "1.0.0").returncode, 2)
+        self.assertEqual(run(str(manifest), "--language", "go").returncode, 2)
+        self.assertEqual(run("--all", str(self.root), "--language", "go").returncode, 2)
+
+        aggregate = self.root / "aggregate"
+        for language in LANGUAGES:
+            write_package(aggregate / language, language, {f"{language}.pkg": language.encode()})
+        markdown = run("--all", str(aggregate), "--markdown")
+        self.assertEqual(markdown.returncode, 0, markdown.stderr)
+        self.assertIn("| dotnet | `dotnet.pkg` | 6 |", markdown.stdout)
+        self.assertEqual(run("--all", str(self.root)).returncode, 1)
+
+    def test_schema_documents_the_same_contract(self) -> None:
+        schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+        self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
+        self.assertEqual(set(schema["required"]), {"schema_version", "language", "version", "artifacts"})
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(tuple(schema["properties"]["language"]["enum"]), LANGUAGES)
+        self.assertEqual(schema["properties"]["version"]["const"], validator.VERSION)
+        item = schema["properties"]["artifacts"]["items"]
+        self.assertEqual(set(item["required"]), {"path", "sha256", "size_bytes"})
+        self.assertEqual(item["properties"]["size_bytes"]["minimum"], 1)
+        path_pattern = re.compile(item["properties"]["path"]["pattern"])
+        for good in ["a.tgz", "ai/cekat/x.jar", ".hidden"]:
+            self.assertIsNotNone(path_pattern.fullmatch(good), good)
+        for bad in ["", "/a", "a//b", "./a", "a/..", "a\\b"]:
+            self.assertIsNone(path_pattern.fullmatch(bad), bad)
+
+
+FAKE_PACKAGE = r'''#!/usr/bin/env python3
+"""Stub package script: writes a valid artifact and manifest unless told to misbehave."""
+import hashlib, json, os, pathlib, sys, time
+language = pathlib.Path(__file__).resolve().parents[1].name
+root = pathlib.Path(__file__).resolve().parents[2]
+with open(root / "order.log", "a") as log:
+    log.write(language + "\n")
+assert sys.argv[1:4:2] == ["--version", "--output"] and len(sys.argv) == 5, sys.argv
+assert sys.argv[2] == "0.1.0", sys.argv
+output = pathlib.Path(sys.argv[4])
+assert output.is_dir() and not any(output.iterdir()), "output must be an existing empty directory"
+behaviour = (root / f"{language}.behaviour").read_text().strip() if (root / f"{language}.behaviour").exists() else "ok"
+if behaviour == "fail":
+    sys.exit(7)
+if behaviour == "sleep":
+    (root / f"{language}.started").write_text(str(os.getpid()))
+    time.sleep(60)
+body = f"{language} artifact".encode()
+(output / f"{language}-0.1.0.pkg").write_bytes(body)
+digest = hashlib.sha256(body).hexdigest()
+if behaviour == "bad-hash":
+    digest = "0" * 64
+manifest = {"schema_version": 1, "language": language, "version": "0.1.0", "artifacts": [{"path": f"{language}-0.1.0.pkg", "sha256": digest, "size_bytes": len(body)}]}
+(output / "manifest.json").write_text(json.dumps(manifest))
+'''
+
+
+class PackageReadinessWrapperTest(unittest.TestCase):
+    """Runs the real wrapper and validator inside a fake repository whose package scripts are stubs."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        base = Path(self.temporary.name)
+        self.repo = base / "repo"
+        (self.repo / "scripts").mkdir(parents=True)
+        shutil.copy2(WRAPPER, self.repo / "scripts" / WRAPPER.name)
+        shutil.copy2(VALIDATOR, self.repo / "scripts" / VALIDATOR.name)
+        for language in LANGUAGES:
+            script = self.repo / language / "scripts" / "package"
+            script.parent.mkdir(parents=True)
+            script.write_text(FAKE_PACKAGE)
+            script.chmod(0o755)
+        self.outputs = base / "out dir with spaces"
+        self.outputs.mkdir()
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def run_wrapper(self, *arguments: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        environment = {key: value for key, value in os.environ.items() if key != "GITHUB_ACTIONS"}
+        environment.update(env or {})
+        return subprocess.run(["bash", str(self.repo / "scripts" / WRAPPER.name), *arguments], capture_output=True, text=True, env=environment, check=False, timeout=120)
+
+    def order(self) -> list[str]:
+        log = self.repo / "order.log"
+        return log.read_text().split() if log.exists() else []
+
+    def test_rejects_invalid_arguments_and_outputs_without_running_packages(self) -> None:
+        nonempty = self.outputs / "nonempty"
+        nonempty.mkdir()
+        (nonempty / "stale").write_text("stale")
+        a_file = self.outputs / "file"
+        a_file.write_text("x")
+        link = self.outputs / "link"
+        link.symlink_to(self.outputs, target_is_directory=True)
+        cases = [
+            [],
+            ["--all"],
+            ["--language", "rust", "--output", str(self.outputs / "x")],
+            ["--language", "go", "--output", str(self.outputs / "x"), "--version", "0.1.0"],
+            ["--output", str(self.outputs / "x"), "--all"],
+            ["--all", "--output", "relative"],
+            ["--all", "--output", f"{self.outputs}/../escape"],
+            ["--all", "--output", str(nonempty)],
+            ["--all", "--output", str(a_file)],
+            ["--all", "--output", str(link)],
+            ["--all", "--output", str(self.outputs / "missing-parent" / "x")],
+            ["--all", "--output", str(self.repo / "inside")],
+        ]
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                result = self.run_wrapper(*arguments)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("usage:", result.stderr)
+        self.assertEqual(self.order(), [])
+        self.assertFalse((self.repo / "inside").exists())
+
+    def test_single_language_builds_and_validates_into_a_language_directory(self) -> None:
+        output = self.outputs / "single"
+        result = self.run_wrapper("--language", "php", "--output", str(output))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.order(), ["php"])
+        self.assertEqual(sorted(path.name for path in output.iterdir()), ["php"])
+        self.assertIn("php: 1 artifact(s) verified", result.stdout)
+        self.assertIn("php: ok", result.stdout)
+
+    def test_all_runs_in_fixed_order_and_validates_the_aggregate(self) -> None:
+        output = self.outputs / "all"
+        output.mkdir()
+        result = self.run_wrapper("--all", "--output", str(output))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.order(), list(LANGUAGES))
+        self.assertEqual(sorted(path.name for path in output.iterdir()), sorted(LANGUAGES))
+        self.assertIn("ruby: 1 artifact(s) verified", result.stdout)
+        self.assertEqual(result.stdout.count(": ok"), 7)
+        self.assertIn(f"Artifacts: {output.resolve()}", result.stdout)
+
+    def test_package_failures_and_invalid_manifests_fail_but_every_language_still_runs(self) -> None:
+        (self.repo / "node.behaviour").write_text("fail")
+        (self.repo / "java.behaviour").write_text("bad-hash")
+        (self.repo / "dotnet" / "scripts" / "package").chmod(0o644)
+        output = self.outputs / "failing"
+        result = self.run_wrapper("--all", "--output", str(output))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.order(), ["go", "node", "python", "php", "java", "ruby"])
+        self.assertIn("node: FAILED (exit 7", result.stdout)
+        self.assertIn("java: FAILED (exit 1", result.stdout)
+        self.assertIn("SHA-256 does not match", result.stderr)
+        self.assertIn("dotnet: FAILED", result.stdout)
+        self.assertIn("dotnet/scripts/package is missing or not executable", result.stderr)
+        self.assertNotIn("aggregate", result.stdout)
+        self.assertNotIn("Artifacts:", result.stdout)
+
+    def test_interrupt_stops_the_running_package_script(self) -> None:
+        (self.repo / "go.behaviour").write_text("sleep")
+        environment = {key: value for key, value in os.environ.items() if key != "GITHUB_ACTIONS"}
+        process = subprocess.Popen(["bash", str(self.repo / "scripts" / WRAPPER.name), "--language", "go", "--output", str(self.outputs / "interrupted")], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
+        started = self.repo / "go.started"
+        deadline = time.monotonic() + 30
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(started.exists(), "stub package script never started")
+        child = int(started.read_text())
+        process.send_signal(signal.SIGTERM)
+        _, stderr = process.communicate(timeout=30)
+        self.assertEqual(process.returncode, 130)
+        self.assertIn("interrupted while packaging go", stderr)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail("the package script kept running after the wrapper was interrupted")
+
+
+class NoPublishTest(unittest.TestCase):
+    FORBIDDEN = re.compile(
+        r"npm publish|gem push|nuget push|twine upload|composer\s+publish|mvn\S*\s+deploy|mvnw\s+deploy|cosign|gpg\s|gh release|git tag|git push|secrets\.",
+        re.IGNORECASE,
+    )
+
+    def test_release_workflow_is_manual_read_only_and_never_publishes(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        trigger = re.search(r"^on:\n((?:[ #].*\n|\n)*?)^\S", text, re.MULTILINE)
+        self.assertIsNotNone(trigger)
+        self.assertEqual([line.strip() for line in trigger.group(1).splitlines() if line.strip() and not line.strip().startswith("#")], ["workflow_dispatch:"])
+        self.assertRegex(text, r"(?m)^permissions:\n  contents: read\n")
+        self.assertNotRegex(text, r"(?m)^\s+(?:id-token|packages|contents):\s*write")
+        self.assertIsNone(self.FORBIDDEN.search(text))
+        self.assertIn("language: [go, node, python, php, java, dotnet, ruby]", text)
+        self.assertIn('scripts/package-readiness.sh --language "${{ matrix.language }}"', text)
+        self.assertIn("validate-package-manifest.py --all", text)
+        self.assertIn("actions/upload-artifact@", text)
+
+    def test_root_release_scripts_never_publish(self) -> None:
+        for path in (WRAPPER, VALIDATOR, ROOT / ".github" / "workflows" / "ci.yml"):
+            with self.subTest(path=path.name):
+                self.assertIsNone(self.FORBIDDEN.search(path.read_text(encoding="utf-8")))
+
+
+if __name__ == "__main__":
+    unittest.main()
