@@ -16,7 +16,7 @@ concurrency:
 jobs:
   contract:
     name: Conformance contract and mock server
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 15
     defaults:
       run:
@@ -36,7 +36,7 @@ jobs:
 
   go:
     name: Go ${{ matrix.profile }} (${{ matrix.go-version }})
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -90,7 +90,7 @@ jobs:
 
   node:
     name: Node.js ${{ matrix.profile }} (${{ matrix.node-version }})
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -137,7 +137,7 @@ jobs:
 
   bun:
     name: Bun ${{ matrix.bun-version }} (Node SDK)
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -176,7 +176,7 @@ jobs:
 
   python:
     name: Python ${{ matrix.python-version }} (${{ matrix.dependencies }})
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -223,7 +223,7 @@ jobs:
 
   dotnet:
     name: .NET ${{ matrix.sdk }} (${{ matrix.test-framework }})
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -269,7 +269,7 @@ jobs:
 
   php:
     name: PHP ${{ matrix.php-version }} (${{ matrix.dependencies }})
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -331,7 +331,7 @@ jobs:
 
   ruby:
     name: Ruby ${{ matrix.ruby-version }} (Rails ${{ matrix.rails }}, Rack ${{ matrix.rack }})
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -383,7 +383,7 @@ jobs:
 
   java:
     name: Java ${{ matrix.java-version }} (Spring Boot ${{ matrix.spring-boot }})
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -419,7 +419,7 @@ jobs:
     name: CI required
     if: always()
     needs: [contract, go, node, bun, python, php, ruby, java, dotnet]
-    runs-on: ubuntu-24.04
+    runs-on: platform-ci-aws
     steps:
       - name: Require every job to succeed
         env:
