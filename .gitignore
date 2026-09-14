@@ -4,3 +4,6 @@
 # Local Superpowers documentation and SDD artifacts
 .superpowers/sdd/
 docs/superpowers/
+
+# Python bytecode from the root script tests
+__pycache__/

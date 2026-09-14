@@ -1,0 +1,180 @@
+name: Release readiness
+
+# Manual, no-publish readiness check for the 0.1.0 release. It runs every language's scripts/package on
+# the current toolchain profile, validates each manifest and the seven-language aggregate, and keeps the
+# artifacts as workflow artifacts for review. It never publishes, signs, tags, creates a release, or
+# reads secrets; publication stays a manual release-owner step.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-readiness-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight (manifest contract and wrapper tests)
+    runs-on: platform-ci-aws
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Root script tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+
+  package:
+    name: Package ${{ matrix.language }}
+    needs: preflight
+    runs-on: platform-ci-aws
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, node, python, php, java, dotnet, ruby]
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      TEST_TARGET_FRAMEWORK: net10.0
+      COMPOSER_IPRESOLVE: '4'
+      RAILS_VERSION: '~> 8.1.0'
+      RACK_VERSION: '~> 3.2.0'
+      JSON_VERSION: '>= 2.7'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Current toolchain profile for each language, matching the "current" rows in ci.yml.
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache-dependency-path: go/**/go.sum
+
+      - if: matrix.language == 'node'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+      - if: matrix.language == 'node'
+        name: Install Playwright browsers for the browser tests
+        working-directory: node
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+
+      - if: matrix.language == 'python'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+      - if: matrix.language == 'python'
+        name: Install package and test dependencies
+        working-directory: python
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[test,django,flask,asgi,fastapi]"
+          # scripts/package runs with python3 from PATH.
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - if: matrix.language == 'php'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: curl, json, mbstring, zip
+          coverage: none
+          tools: composer:v2
+
+      - if: matrix.language == 'java'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: java/**/pom.xml
+
+      - if: matrix.language == 'dotnet'
+        uses: actions/setup-dotnet@v6
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: 10.0.x
+      - if: matrix.language == 'dotnet'
+        name: Select the 10.0 SDK
+        working-directory: dotnet
+        run: |
+          version="$(dotnet --list-sdks | awk '/^10\.0\./ {v=$1} END {print v}')"
+          jq --arg version "$version" '.sdk = {version: $version, rollForward: "latestPatch"}' global.json > global.json.tmp
+          mv global.json.tmp global.json
+          dotnet --version
+
+      - if: matrix.language == 'ruby'
+        name: Make the Ruby tool cache writable
+        run: |
+          if [ ! -w /opt/hostedtoolcache ]; then
+            sudo -n mkdir -p /opt/hostedtoolcache
+            sudo -n chown "$(id -u):$(id -g)" /opt/hostedtoolcache
+          fi
+      - if: matrix.language == 'ruby'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+          working-directory: ruby
+          bundler-cache: false
+
+      - name: Build and validate ${{ matrix.language }} package artifacts
+        run: scripts/package-readiness.sh --language "${{ matrix.language }}" --output "$RUNNER_TEMP/cekat-artifacts"
+      # Workflow artifact storage for review; this is not registry publication.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cekat-event-sdk-0.1.0-${{ matrix.language }}
+          path: ${{ runner.temp }}/cekat-artifacts
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: Validate all package manifests
+    needs: package
+    runs-on: platform-ci-aws
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cekat-event-sdk-0.1.0-*
+          path: ${{ runner.temp }}/cekat-artifacts
+          merge-multiple: true
+      - name: Validate the seven-language aggregate
+        run: |
+          python3 scripts/validate-package-manifest.py --all "$RUNNER_TEMP/cekat-artifacts"
+          python3 scripts/validate-package-manifest.py --all "$RUNNER_TEMP/cekat-artifacts" --markdown >> "$GITHUB_STEP_SUMMARY"
+
+  manual-gates:
+    name: Manual release gates (not automated)
+    needs: aggregate
+    runs-on: platform-ci-aws
+    timeout-minutes: 5
+    steps:
+      - name: List the release-owner steps this workflow does not perform
+        run: |
+          {
+            echo "### Manual release gates"
+            echo ""
+            echo "Artifacts are built and verified. These steps remain with the release owner:"
+            echo ""
+            echo "- [ ] Registry ownership and final package coordinates for npm, PyPI, Packagist, RubyGems, Maven Central (ai.cekat namespace), NuGet, and the Go module path"
+            echo "- [ ] License and legal review"
+            echo "- [ ] Changelog and release notes approval"
+            echo "- [ ] Signing, where a registry requires it"
+            echo "- [ ] Registry credentials or trusted publishing configuration"
+            echo "- [ ] Tags and publication, using the artifacts verified above"
+          } >> "$GITHUB_STEP_SUMMARY"
