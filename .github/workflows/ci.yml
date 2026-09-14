@@ -248,6 +248,9 @@ jobs:
       - *build-mock-setup
       - *build-mock
       - uses: actions/setup-dotnet@v6
+        env:
+          # The default /usr/share/dotnet is not writable by the self-hosted runner user.
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: ${{ matrix.sdk }}.x
       - name: Select the ${{ matrix.sdk }} SDK
@@ -282,6 +285,9 @@ jobs:
           # Declared floors not reachable while Laravel is installed: Symfony 6.4 and lowest PSR packages.
           - php-version: '8.2'
             dependencies: symfony-6.4-floor
+    env:
+      # The self-hosted runner's route to packagist.org can stall; avoid IPv6 and retry network calls.
+      COMPOSER_IPRESOLVE: '4'
     defaults:
       run:
         working-directory: php
@@ -299,16 +305,24 @@ jobs:
           tools: composer:v2
       - name: Resolve dependencies
         run: |
+          retry() {
+            for attempt in 1 2 3; do
+              "$@" && return 0
+              echo "::warning::attempt $attempt of 3 failed: $*"
+              sleep $((attempt * 10))
+            done
+            return 1
+          }
           case "${{ matrix.dependencies }}" in
             lowest)
-              composer update --prefer-lowest --prefer-stable --no-interaction --no-progress ;;
+              retry composer update --prefer-lowest --prefer-stable --no-interaction --no-progress ;;
             highest)
-              composer update --no-interaction --no-progress ;;
+              retry composer update --no-interaction --no-progress ;;
             symfony-6.4-floor)
               composer remove --dev --no-update laravel/framework orchestra/testbench
               composer require --dev --no-update "symfony/http-kernel:~6.4.0" "symfony/http-foundation:~6.4.0"
               rm tests/Integration/LaravelIntegrationTest.php
-              composer update --prefer-lowest --prefer-stable --no-interaction --no-progress ;;
+              retry composer update --prefer-lowest --prefer-stable --no-interaction --no-progress ;;
           esac
           composer show --direct
       - name: Validate manifest
@@ -324,7 +338,13 @@ jobs:
         run: vendor/bin/php-cs-fixer fix --dry-run --diff
       - name: Security audit
         if: matrix.dependencies == 'highest'
-        run: composer audit
+        run: |
+          for attempt in 1 2 3; do
+            composer audit && exit 0
+            echo "::warning::attempt $attempt of 3 failed: composer audit"
+            sleep $((attempt * 10))
+          done
+          exit 1
       - name: Shared conformance
         working-directory: .
         run: scripts/conformance.sh --language php
@@ -363,6 +383,13 @@ jobs:
           persist-credentials: false
       - *build-mock-setup
       - *build-mock
+      # Prebuilt Rubies only run from /opt/hostedtoolcache, which the self-hosted runner user cannot create.
+      - name: Make the Ruby tool cache writable
+        run: |
+          if [ ! -w /opt/hostedtoolcache ]; then
+            sudo -n mkdir -p /opt/hostedtoolcache
+            sudo -n chown "$(id -u):$(id -g)" /opt/hostedtoolcache
+          fi
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby-version }}
