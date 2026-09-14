@@ -64,7 +64,7 @@ describe('deliver protocol and bounded bodies', () => {
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith(config.url, expect.objectContaining({
       method: 'POST',
-      headers: { authorization: `Bearer ${config.accessToken}`, 'content-type': 'application/json', 'user-agent': `cekat-event-sdk-node/${SDK_VERSION} node/${process.versions.node}` },
+      headers: { authorization: `Bearer ${config.accessToken}`, 'content-type': 'application/json', 'user-agent': `cekat-event-sdk-node/${SDK_VERSION} ${process.versions.bun === undefined ? `node/${process.versions.node}` : `bun/${process.versions.bun}`}` },
       body: JSON.stringify(payload),
     }));
     expect(ack).toEqual({ success: true, message: 'accepted', eventKey: 'order_paid', validatedProperties: ['order_id'], rawBody: success });

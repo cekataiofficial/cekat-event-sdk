@@ -22,8 +22,19 @@ validate_origin "$CEKAT_CONFORMANCE_BASE_URL" CEKAT_CONFORMANCE_BASE_URL
 validate_origin "$CEKAT_CONFORMANCE_CONTROL_URL" CEKAT_CONFORMANCE_CONTROL_URL
 case "$CEKAT_CONFORMANCE_FIXTURES" in /*) ;; *) echo 'CEKAT_CONFORMANCE_FIXTURES must be absolute' >&2; exit 2;; esac
 [ -d "$CEKAT_CONFORMANCE_FIXTURES" ] && [ -r "$CEKAT_CONFORMANCE_FIXTURES" ] || { echo 'CEKAT_CONFORMANCE_FIXTURES must be an absolute readable directory' >&2; exit 2; }
+# CEKAT_NODE_RUNTIME selects the JavaScript runtime that executes the SDK: node (default) or bun.
+# Dependency installation, builds, and type checks always use Node.js and npm.
+runtime=${CEKAT_NODE_RUNTIME:-node}
+case "$runtime" in
+  node) ;;
+  bun) command -v bun >/dev/null 2>&1 || { echo 'CEKAT_NODE_RUNTIME=bun requires bun on PATH' >&2; exit 2; } ;;
+  *) echo "CEKAT_NODE_RUNTIME must be node or bun, not $runtime" >&2; exit 2 ;;
+esac
 cd "$(dirname "$0")/.."
 npm ci
 npm run build
 npm run typecheck
+if [ "$runtime" = bun ]; then
+  exec bun --bun ./node_modules/vitest/vitest.mjs run test/conformance/sdk.test.ts
+fi
 exec npx vitest run test/conformance/sdk.test.ts

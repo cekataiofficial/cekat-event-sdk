@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   collectOfficialMetadata,
+  evaluateBun,
   evaluateCompatibility,
   permitsNodeVersion,
   renderCompatibilityMarkdown,
@@ -44,6 +45,7 @@ function fixtures() {
   return {
     nodeSchedule,
     nodeIndex,
+    bun: metadata(['1.2.23', '1.3.0', '1.3.14', '1.4.0', '1.4.2', '1.5.0-canary.1']),
     packages: {
       typescript: metadata(['5.8.3', '5.9.3'], engines(['5.8.3', '5.9.3'])),
       vitest: metadata(['3.2.4'], engines(['3.2.4'])),
@@ -66,7 +68,7 @@ function fixtures() {
 }
 
 function npmViewForFixture(name, version) {
-  const packageMetadata = fixtures().packages[name];
+  const packageMetadata = name === 'bun' ? fixtures().bun : fixtures().packages[name];
   return version ? { engines: packageMetadata.engines[version] ?? {} } : packageMetadata;
 }
 
@@ -152,6 +154,7 @@ test('collects official sources and propagates thrown or malformed npm metadata 
   });
   assert.equal(calls.length, 2);
   assert.equal(collected.packages.fastify, collected.packages.fastify);
+  assert.deepEqual(collected.bun.versions, fixtures().bun.versions);
 
   const writes = [];
   const stdout = [];
@@ -168,6 +171,8 @@ test('collects official sources and propagates thrown or malformed npm metadata 
   assert.match(writes[0].content, /@nestjs\/core/);
   assert.match(writes[0].content, /\| express \| \^4\.17\.0 \\\|\\\| \^5\.0\.0 \|/);
   assert.deepEqual(stdout, ['12.1.0\n']);
+  // The declared engines.bun range comes from package.json.
+  assert.match(writes[0].content, /\| Bun \| 1\.4\.2 \| >=1\.4\.0 \|/);
 
   await assert.rejects(
     () => collectOfficialMetadata({ fetchJson: async () => { throw new Error('network unavailable'); }, npmView: npmViewForFixture }),
@@ -185,6 +190,23 @@ test('collects official sources and propagates thrown or malformed npm metadata 
     () => runCli([], { collect: () => collectOfficialMetadata({ fetchJson: async (url) => url === sources.nodeSchedule ? fixtures().nodeSchedule : fixtures().nodeIndex, npmView: () => { throw new Error('registry unavailable'); } }) }),
     /official npm metadata is unavailable/i,
   );
+});
+
+test('records Bun evidence only for a published floor and a latest release inside the declared range', () => {
+  const evidence = evaluateCompatibility(fixtures(), { now: retrievedAt, sources, packageNodeRange: '>=22.0.0 <28.0.0', packageBunRange: '>=1.3.0' });
+  assert.deepEqual(evidence.bun, { range: '>=1.3.0', floor: '1.3.0', floorReleasedAt: '2026-09-01T00:00:00.000Z', latest: '1.4.2', latestReleasedAt: '2026-09-01T00:00:00.000Z' });
+  assert.equal(evaluateCompatibility(fixtures(), { now: retrievedAt, packageNodeRange: '>=22.0.0' }).bun, undefined);
+
+  const markdown = renderCompatibilityMarkdown(evidence);
+  assert.match(markdown, /\| Bun \| 1\.4\.2 \| >=1\.3\.0 \|/);
+  assert.match(markdown, /Bun has no LTS line.*floor 1\.3\.0.*latest stable release 1\.4\.2/);
+  assert.match(markdown, /- Bun releases: `npm view bun/);
+
+  assert.throws(() => evaluateBun(fixtures().bun, '>=1.3.1'), /Bun floor 1\.3\.1 is not a published Bun release/);
+  assert.throws(() => evaluateBun(fixtures().bun, '>=1.3.0 <1.4.0'), /latest stable Bun 1\.4\.2 is outside/);
+  assert.throws(() => evaluateBun(fixtures().bun, 'not a range'), /engines\.bun range/);
+  assert.throws(() => evaluateBun({ versions: 'nope' }, '>=1.3.0'), /Bun release metadata is unavailable or malformed/);
+  assert.throws(() => evaluateCompatibility({ ...fixtures(), bun: undefined }, { now: retrievedAt, packageNodeRange: '>=22.0.0', packageBunRange: '>=1.3.0' }), /Bun release metadata/);
 });
 
 test('parses browser and Next Edge dependency graphs to reject reachable node built-ins', async () => {

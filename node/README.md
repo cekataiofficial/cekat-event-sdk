@@ -1,14 +1,14 @@
 # `@cekat/event-sdk`
 
-The Node.js SDK sends Cekat events through a backend-only access token. Browser exports deliberately contain **no token client**, `Authorization` handling, or Node imports.
+The server SDK for Node.js and Bun sends Cekat events through a backend-only access token. Browser exports deliberately contain **no token client**, `Authorization` handling, or Node imports.
 
-## Install and initialize (Node.js)
+## Install and initialize (Node.js and Bun)
 
 ```sh
-npm install @cekat/event-sdk
+npm install @cekat/event-sdk    # or: bun add @cekat/event-sdk
 ```
 
-Requires Node.js 22.12 or newer. The package is ESM and also loads from CommonJS through `require()` (for example in default NestJS projects). The Node client is exported from both `@cekat/event-sdk` and `@cekat/event-sdk/node`.
+Requires Node.js 22.12 or newer, or Bun 1.4.0 or newer. The same package runs on both; see [Bun](#bun). The package is ESM and also loads from CommonJS through `require()` (for example in default NestJS projects). The Node client is exported from both `@cekat/event-sdk` and `@cekat/event-sdk/node`.
 
 | Framework adapter | Supported majors |
 | --- | --- |
@@ -17,6 +17,7 @@ Requires Node.js 22.12 or newer. The package is ESM and also loads from CommonJS
 | Koa | 2.13+, 3 |
 | NestJS (Express or Fastify platform) | 10, 11, 12 |
 | Next.js (Node runtime) | 14, 15, 16 |
+| Fetch-style handlers: `Bun.serve`, Hono, Elysia (`@cekat/event-sdk/fetch`) | Any |
 
 ```ts
 import { Client } from '@cekat/event-sdk';
@@ -25,7 +26,7 @@ import { Client } from '@cekat/event-sdk';
 const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
 ```
 
-`Client` accepts a token only plus optional `{ baseURL, timeoutMs, retryCount, fetch }` options. `baseURL` must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The default is `https://server.cekat.ai`; each operation posts only to `/api/events/ingest` and identifies itself with `User-Agent: cekat-event-sdk-node/<version>`. The default timeout is 3 seconds per attempt and the default retry count is two after the initial request. Pass `{ signal }` to any event call to cancel without retrying.
+`Client` accepts a token only plus optional `{ baseURL, timeoutMs, retryCount, fetch }` options. `baseURL` must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The default is `https://server.cekat.ai`; each operation posts only to `/api/events/ingest` and identifies itself with `User-Agent: cekat-event-sdk-node/<version> <runtime>/<version>`, where the runtime is `node` or `bun`. The default timeout is 3 seconds per attempt and the default retry count is two after the initial request. Pass `{ signal }` to any event call to cancel without retrying.
 
 ```ts
 await cekat.userRegistration({ email: 'person@example.test' });
@@ -101,6 +102,48 @@ export default withCekatVisitor(async (request, response) => { /* ... */ });
 
 For App Router handlers use `runWithCekatVisitor(request, () => handler())` in the same kind of Node-runtime route.
 
+## Bun
+
+On Bun 1.4.0 or newer the client, the visitor scope, and the Express, Fastify, Koa, and NestJS adapters run unchanged; their test suites pass with Bun as the runtime. The Next.js helpers' tests also pass on Bun, but whether Next.js itself runs on Bun is up to Next.js. No separate import or build is needed. Bun-native servers pass a Web `Request` to a `fetch` handler, so use `@cekat/event-sdk/fetch`:
+
+```ts
+import { Client } from '@cekat/event-sdk';
+import { withCekatVisitor } from '@cekat/event-sdk/fetch';
+
+const cekat = new Client(Bun.env.CEKAT_ACCESS_TOKEN!);
+
+Bun.serve({
+  // `this` and extra arguments such as `server` pass through unchanged.
+  fetch: withCekatVisitor(async (request, server) => {
+    const { email } = await request.json();
+    await cekat.userLogin({ email }); // sends the request's visitor_id
+    return new Response('ok');
+  }),
+  // Route handlers can be wrapped individually:
+  // routes: { '/login': { POST: withCekatVisitor(login) } },
+});
+```
+
+Hono and Elysia expose a standard `fetch`, so wrap it, or use Hono middleware:
+
+```ts
+import { Hono } from 'hono';
+import { runWithCekatVisitor, withCekatVisitor } from '@cekat/event-sdk/fetch';
+
+const hono = new Hono();
+hono.use((c, next) => runWithCekatVisitor(c.req.raw, next));
+export default { fetch: hono.fetch };
+
+// Elysia: serve its fetch handler with the wrapper instead of app.listen().
+Bun.serve({ fetch: withCekatVisitor(elysiaApp.fetch) });
+```
+
+`@cekat/event-sdk/fetch` needs only a Web `Request` and `AsyncLocalStorage`, so it also works with Hono on Node.js. The scope covers the handler and everything it awaits or starts. A streaming response body that is generated after the handler returns may not observe it: read `currentVisitorId()` in the handler and pass the value along.
+
+On Bun, `AsyncLocalStorage` is not restored inside `AbortSignal.timeout()` listeners or `MessagePort` message handlers (it is on Node.js). Calls made from those callbacks send no visitor unless you capture it first and pass it explicitly: `const visitorId = currentVisitorId();` then `cekat.userLogin({ email, visitorId })`. Every other asynchronous boundary the test suite covers behaves as on Node.js.
+
+Bun 1.3 is not supported: it intermittently delivers a stale response to a request after an earlier request timed out. See [docs/compatibility.md](docs/compatibility.md#bun).
+
 ## Errors and delivery outcome
 
 Invalid local input rejects with `ValidationError` before network I/O. Received responses have known delivery outcome and reject with `AuthenticationError` (401), `EventDefinitionNotFoundError` (404), `ApiError` (other non-200), or `ResponseDecodeError` (malformed, truncated, or unreadable 200). `TransportError` means outcome is unknown after transport failure or SDK timeout. HTTP bodies retained in errors are bounded to 65,536 bytes.
@@ -151,5 +194,7 @@ The automatic interceptor covers browser global `fetch` and `XMLHttpRequest` onl
 ```sh
 ./scripts/package --version 0.1.0 --output /absolute/empty-directory
 ```
+
+Bun support is verified separately with `npm run test:bun` (the test suites on Bun, including the Bun-only `test/bun` servers) and `CEKAT_NODE_RUNTIME=bun scripts/conformance` (the shared conformance fixtures on Bun). Both use Node.js and npm for installation and type checking.
 
 The command runs dependency installation, official compatibility verification, production and full dependency audits, the approved-range dependency gate, tests, type checks, builds, export checks, and browser tests; it then creates one local `.tgz` plus an atomic SHA-256 `manifest.json`. It never publishes, signs, tags, or pushes.

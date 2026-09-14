@@ -12,6 +12,7 @@ import { compare, minVersion, parse, prerelease, satisfies, validRange } from 's
 
 const NODE_SCHEDULE_URL = 'https://raw.githubusercontent.com/nodejs/Release/main/schedule.json';
 const NODE_INDEX_URL = 'https://nodejs.org/dist/index.json';
+const BUN_SOURCE = 'npm view bun versions time dist-tags --json (Bun publishes each runtime release to npm)';
 const NPM_SOURCE = 'npm view <package> versions time engines dist-tags --json; npm view <package>@<version> engines --json';
 const TYPESCRIPT_COMPILER_API_VERSION = '5.9.3';
 const packageNames = {
@@ -87,7 +88,7 @@ function packageSupportsVersion(metadata, selectedVersion, nodeVersion) {
   return engine === undefined || permitsNodeVersion(engine, nodeVersion);
 }
 
-export function evaluateCompatibility(input, { now = new Date().toISOString(), sources = {}, packageNodeRange = '>=22.12.0 <28.0.0' } = {}) {
+export function evaluateCompatibility(input, { now = new Date().toISOString(), sources = {}, packageNodeRange = '>=22.12.0 <28.0.0', packageBunRange } = {}) {
   const date = new Date(now);
   if (Number.isNaN(date.valueOf())) fail('retrieval timestamp is invalid');
   const floorVersion = declaredFloor(packageNodeRange);
@@ -134,9 +135,25 @@ export function evaluateCompatibility(input, { now = new Date().toISOString(), s
   if (!maintained.length) fail('no active maintained Node LTS line is supported by every selected package engine');
   return {
     retrievedAt: date.toISOString(), packageNodeRange, nodeFloor: floorVersion,
-    sources: { nodeSchedule: sources.nodeSchedule ?? NODE_SCHEDULE_URL, nodeIndex: sources.nodeIndex ?? NODE_INDEX_URL, npm: sources.npm ?? NPM_SOURCE },
+    ...(packageBunRange === undefined ? {} : { bun: evaluateBun(input.bun, packageBunRange) }),
+    sources: { nodeSchedule: sources.nodeSchedule ?? NODE_SCHEDULE_URL, nodeIndex: sources.nodeIndex ?? NODE_INDEX_URL, npm: sources.npm ?? NPM_SOURCE, ...(packageBunRange === undefined ? {} : { bun: sources.bun ?? BUN_SOURCE }) },
     node: { floor: floorMajor, majors: maintained, versions: Object.fromEntries(maintained.map((major) => [major, nodeVersions[major]])), range: supportRange(maintained) }, versions,
   };
+}
+
+/**
+ * Bun publishes no LTS line and maintains only its latest release, so the gate requires the declared
+ * engines.bun floor to be a published stable release and the latest stable release to satisfy the range.
+ */
+export function evaluateBun(metadata, range) {
+  if (!metadata || !Array.isArray(metadata.versions) || !metadata.versions.length || !metadata.time || typeof metadata.time !== 'object') fail('official Bun release metadata is unavailable or malformed');
+  if (typeof range !== 'string' || !validRange(range)) fail(`declared package engines.bun range ${range} is not valid npm semver`);
+  const floor = minVersion(range);
+  if (!floor || floor.prerelease.length) fail(`declared package engines.bun range ${range} has no stable floor`);
+  if (!metadata.versions.includes(floor.version) || !metadata.time[floor.version]) fail(`declared Bun floor ${floor.version} is not a published Bun release`);
+  const latest = latestStable(metadata.versions);
+  if (!satisfies(latest, range)) fail(`latest stable Bun ${latest} is outside declared engines.bun ${range}`);
+  return { range, floor: floor.version, floorReleasedAt: metadata.time[floor.version], latest, latestReleasedAt: metadata.time[latest] };
 }
 
 export function renderCompatibilityMarkdown(evidence, peerDependencies = {}) {
@@ -144,8 +161,13 @@ export function renderCompatibilityMarkdown(evidence, peerDependencies = {}) {
     typescript: 'TypeScript', vitest: 'Vitest', playwright: 'Playwright', semver: 'SemVer (npm maintained range evaluator)',
     'types-node': '@types/node', express: 'Express', 'types-express': '@types/express', fastify: 'Fastify', koa: 'Koa', 'types-koa': '@types/koa', nestjs: '@nestjs/common', 'nestjs-core': '@nestjs/core', 'nestjs-platform-express': '@nestjs/platform-express', 'nestjs-platform-fastify': '@nestjs/platform-fastify', nextjs: 'Next.js (Node engine compatibility)', axios: 'Axios',
   };
-  const rows = [['Node.js', evidence.node.versions[evidence.node.floor], evidence.node.range], ...Object.entries(evidence.versions).map(([key, version]) => [labels[key], version, `^${parseVersion(version).major}.0.0`])];
-  return `# Node SDK compatibility evidence\n\nRetrieved: ${evidence.retrievedAt}\n\n## Official sources\n\n- Node release schedule: ${evidence.sources.nodeSchedule}\n- Node distribution index: ${evidence.sources.nodeIndex}\n- npm registry: \`${evidence.sources.npm}\`\n\nThe compatibility gate selected active even-numbered Node LTS lines ${evidence.node.majors.join(', ')}: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node ${evidence.nodeFloor} (${evidence.packageNodeRange}); odd, EOL, and package-engine-incompatible lines are not supported. TypeScript is deliberately pinned to the exact compatible version ${TYPESCRIPT_COMPILER_API_VERSION} because the browser/Edge boundary guard uses its supported createSourceFile compiler API for fail-closed AST parsing. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.\n\n| Component | Exact observed version | Selected support range |\n| --- | --- | --- |\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n${renderPeerRanges(peerDependencies)}`;
+  const rows = [['Node.js', evidence.node.versions[evidence.node.floor], evidence.node.range], ...(evidence.bun === undefined ? [] : [['Bun', evidence.bun.latest, evidence.bun.range]]), ...Object.entries(evidence.versions).map(([key, version]) => [labels[key], version, `^${parseVersion(version).major}.0.0`])];
+  return `# Node SDK compatibility evidence\n\nRetrieved: ${evidence.retrievedAt}\n\n## Official sources\n\n- Node release schedule: ${evidence.sources.nodeSchedule}\n- Node distribution index: ${evidence.sources.nodeIndex}\n- npm registry: \`${evidence.sources.npm}\`\n${evidence.bun === undefined ? '' : `- Bun releases: \`${evidence.sources.bun}\`\n`}\nThe compatibility gate selected active even-numbered Node LTS lines ${evidence.node.majors.join(', ')}: each line has started, reached its LTS date, is not EOL, and is accepted by every selected runtime, declaration, and plugin package engine. The declared package engine floor is Node ${evidence.nodeFloor} (${evidence.packageNodeRange}); odd, EOL, and package-engine-incompatible lines are not supported. TypeScript is deliberately pinned to the exact compatible version ${TYPESCRIPT_COMPILER_API_VERSION} because the browser/Edge boundary guard uses its supported createSourceFile compiler API for fail-closed AST parsing. npm metadata establishes only that Next.js accepts this Node version; it does not establish a Next.js runtime boundary. A separate package-graph guard rejects Node-only imports from browser and present Next Edge entrypoints.${renderBunSummary(evidence.bun)}\n\n| Component | Exact observed version | Selected support range |\n| --- | --- | --- |\n${rows.map((row) => `| ${row.join(' | ')} |`).join('\n')}\n${renderPeerRanges(peerDependencies)}`;
+}
+
+function renderBunSummary(bun) {
+  if (bun === undefined) return '';
+  return ` Bun has no LTS line and maintains only its latest release; the declared engines.bun range is ${bun.range}, whose floor ${bun.floor} (released ${bun.floorReleasedAt.slice(0, 10)}) and the latest stable release ${bun.latest} (released ${bun.latestReleasedAt.slice(0, 10)}) are both exercised by the Bun test and conformance profiles.`;
 }
 
 function renderPeerRanges(peerDependencies) {
@@ -184,6 +206,7 @@ export async function collectOfficialMetadata({ fetchJson = fetchJsonFromUrl, np
   try { [nodeSchedule, nodeIndex] = await Promise.all([fetchJson(NODE_SCHEDULE_URL), fetchJson(NODE_INDEX_URL)]); }
   catch (error) { if (/Compatibility verification failed/.test(error.message)) throw error; fail('official Node metadata is unavailable'); }
   const packages = {};
+  const bun = npmMetadata('bun', npmView);
   for (const [key, name] of Object.entries(packageNames)) {
     const metadata = npmMetadata(name, npmView);
     const version = key === 'typescript'
@@ -201,7 +224,7 @@ export async function collectOfficialMetadata({ fetchJson = fetchJsonFromUrl, np
     packages[name] = metadata;
     packages[key] = metadata;
   }
-  return { nodeSchedule, nodeIndex, packages };
+  return { nodeSchedule, nodeIndex, packages, bun };
 }
 function parseArgs(args) {
   let write = false; let print;
@@ -218,16 +241,16 @@ async function readPackageManifest() {
   return JSON.parse(await readFile(packagePath, 'utf8'));
 }
 export async function runCli(args, {
-  collect = collectOfficialMetadata, now, packageNodeRange, mkdir: makeDirectory = mkdir, writeFile: write = writeFile,
+  collect = collectOfficialMetadata, now, packageNodeRange, packageBunRange, mkdir: makeDirectory = mkdir, writeFile: write = writeFile,
   output = resolve(dirname(fileURLToPath(import.meta.url)), '../docs/compatibility.md'), stdout = (line) => process.stdout.write(line),
 } = {}) {
   const { write: shouldWrite, print } = parseArgs(args);
   const manifest = await readPackageManifest();
   const range = packageNodeRange ?? manifest.engines?.node;
-  const evidence = evaluateCompatibility(await collect(), { now, packageNodeRange: range });
+  const evidence = evaluateCompatibility(await collect(), { now, packageNodeRange: range, packageBunRange: packageBunRange ?? manifest.engines?.bun });
   if (shouldWrite) { await makeDirectory(dirname(output), { recursive: true }); await write(output, renderCompatibilityMarkdown(evidence, manifest.peerDependencies)); }
   if (print !== undefined) stdout(`${evidence.versions[print]}\n`);
-  else stdout(`Compatibility verified: Node ${evidence.node.range}; ${Object.entries(evidence.versions).map(([key, version]) => `${key} ${version}`).join(', ')}\n`);
+  else stdout(`Compatibility verified: Node ${evidence.node.range}${evidence.bun === undefined ? '' : `; Bun ${evidence.bun.range} (latest ${evidence.bun.latest})`}; ${Object.entries(evidence.versions).map(([key, version]) => `${key} ${version}`).join(', ')}\n`);
   return evidence;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) runCli(process.argv.slice(2)).catch((error) => { console.error(error.message); process.exitCode = 1; });

@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["bun"]
+  },
+  "include": ["src/node/**/*.ts", "src/integrations/fetch.ts", "test/bun/**/*.ts"],
+  "exclude": ["src/browser/**/*.ts"]
+}

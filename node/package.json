@@ -13,7 +13,8 @@
     "multer": "2.3.0"
   },
   "engines": {
-    "node": ">=22.12.0 <28.0.0"
+    "node": ">=22.12.0 <28.0.0",
+    "bun": ">=1.4.0"
   },
   "exports": {
     ".": {
@@ -23,6 +24,10 @@
     "./node": {
       "types": "./dist/node/index.d.ts",
       "default": "./dist/node/index.js"
+    },
+    "./fetch": {
+      "types": "./dist/integrations/fetch.d.ts",
+      "default": "./dist/integrations/fetch.js"
     },
     "./express": {
       "types": "./dist/integrations/express.d.ts",
@@ -55,8 +60,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.browser.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json && node scripts/check-browser-boundary.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json && tsc --noEmit -p tsconfig.bun.json && node scripts/check-browser-boundary.mjs",
     "test": "node --test test/compatibility/verify-compatibility.test.mjs test/package/package-script.test.mjs && vitest run",
+    "test:bun": "bun --bun ./node_modules/vitest/vitest.mjs run",
     "test:browser": "playwright test --pass-with-no-tests",
     "test:conformance": "vitest run test/conformance/sdk.test.ts",
     "check:exports": "node scripts/check-exports.mjs",
@@ -110,14 +116,17 @@
     "@nestjs/platform-express": "12.0.1",
     "@nestjs/platform-fastify": "12.0.1",
     "@playwright/test": "1.63.0",
+    "@types/bun": "1.4.2",
     "@types/express": "5.0.6",
     "@types/koa": "3.0.3",
     "@types/node": "22.20.2",
     "@vitest/coverage-v8": "5.0.0",
     "ajv": "8.20.0",
     "axios": "1.20.0",
+    "elysia": "1.4.30",
     "express": "5.2.1",
     "fastify": "5.12.4",
+    "hono": "4.13.7",
     "jsdom": "26.1.0",
     "koa": "3.2.1",
     "next": "16.3.4",
