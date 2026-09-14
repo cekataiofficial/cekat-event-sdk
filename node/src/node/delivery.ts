@@ -7,6 +7,7 @@ import {
   TransportError,
 } from './errors.js';
 import type { Acknowledgement, CallOptions, FetchLike, WirePayload } from './types.js';
+import { runtimeProductToken } from './runtime.js';
 import { SDK_VERSION } from './version.js';
 
 export interface DeliveryConfig {
@@ -26,7 +27,7 @@ export interface DeliveryDependencies {
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const MAXIMUM_RETRY_AFTER_MS = 5_000;
-const USER_AGENT = `cekat-event-sdk-node/${SDK_VERSION} node/${process.versions.node}`;
+const USER_AGENT = `cekat-event-sdk-node/${SDK_VERSION} ${runtimeProductToken()}`;
 
 /** A retryable response that should be retried after at least `retryAfterMs`. */
 interface RetryResponse {

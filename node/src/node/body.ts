@@ -61,9 +61,11 @@ export async function readBoundedBody(response: Response, signal?: AbortSignal):
   };
 }
 
-type ReadResult = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>['read']>>;
+// Only the standard reader members are used, so Bun's extended reader type (for example readMany) also fits.
+type ChunkReader = Pick<ReadableStreamDefaultReader<Uint8Array>, 'read' | 'cancel' | 'releaseLock'>;
+type ReadResult = Awaited<ReturnType<ChunkReader['read']>>;
 
-async function readWithSignal(reader: ReadableStreamDefaultReader<Uint8Array>, signal: AbortSignal | undefined): Promise<ReadResult> {
+async function readWithSignal(reader: ChunkReader, signal: AbortSignal | undefined): Promise<ReadResult> {
   if (signal === undefined) return reader.read();
   if (signal.aborted) throw signal.reason ?? createAbortError();
   return new Promise<ReadResult>((resolve, reject) => {

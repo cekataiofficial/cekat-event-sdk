@@ -8,6 +8,7 @@ import { createClientForTesting, type Client } from '../../src/node/client.js';
 import { ApiError, AuthenticationError, EventDefinitionNotFoundError, ResponseDecodeError, TransportError, ValidationError } from '../../src/node/errors.js';
 import { runWithVisitorFromHeaders, runWithVisitorId } from '../../src/node/visitor-context.js';
 import type { BoundedBody } from '../../src/node/body.js';
+import { SDK_VERSION } from '../../src/node/version.js';
 
 type Fixture = Record<string, any>;
 type SchemaValidator = (value: unknown) => boolean;
@@ -158,9 +159,11 @@ function assertResult(fixture: Fixture, result: unknown, error: unknown, observe
 const GENERATED_EVENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CANONICAL_OCCURRED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const USER_AGENT = /^cekat-event-sdk-node\/\d+\.\d+\.\d+\S*( .+)?$/;
+// The runtime token must name the runtime actually executing the SDK: Bun also reports a Node version.
+const RUNTIME_TOKEN = process.versions.bun === undefined ? `node/${process.versions.node}` : `bun/${process.versions.bun}`;
 async function assertJournal(fixture: Fixture, window: { started: number; finished: number }): Promise<void> {
   const entries = await journal(); expect(entries).toHaveLength(fixture.expect.attempts);
-  for (const entry of entries) { expect(entry.headers['user-agent']).toHaveLength(1); expect(entry.headers['user-agent'][0]).toMatch(USER_AGENT); }
+  for (const entry of entries) { expect(entry.headers['user-agent']).toHaveLength(1); expect(entry.headers['user-agent'][0]).toMatch(USER_AGENT); expect(entry.headers['user-agent'][0]).toBe(`cekat-event-sdk-node/${SDK_VERSION} ${RUNTIME_TOKEN}`); }
   if (fixture.expect.request === undefined) return;
   const generated = new Map<string, string>();
   for (const [index, entry] of entries.entries()) {
@@ -241,7 +244,7 @@ describe('shared fixture schema validation', () => {
   });
 });
 
-describe.skipIf(!configured)('shared Node SDK conformance', () => {
+describe.skipIf(!configured)(`shared Node SDK conformance on ${RUNTIME_TOKEN}`, () => {
   test('validates and executes every directly discovered fixture exactly once', async () => {
     assertOrigin(baseURL, 'CEKAT_CONFORMANCE_BASE_URL'); assertOrigin(controlURL, 'CEKAT_CONFORMANCE_CONTROL_URL');
     const fixtures = await discoverFixtures(fixturesDirectory); const executed = new Set<string>();

@@ -135,6 +135,45 @@ jobs:
         working-directory: .
         run: scripts/conformance.sh --language node
 
+  bun:
+    name: Bun ${{ matrix.bun-version }} (Node SDK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The declared engines.bun floor and the latest observed release. Bun 1.3 fails conformance.
+        bun-version: ['1.4.0', '1.4.2']
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - *build-mock-setup
+      - *build-mock
+      # Node.js and npm install dependencies and run TypeScript; Bun executes the SDK and tests.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun-version }}
+      - run: bun --version
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Test suites on Bun (including Bun.serve, Hono, and Elysia)
+        run: npm run test:bun
+      - name: Shared conformance on Bun
+        working-directory: .
+        env:
+          CEKAT_NODE_RUNTIME: bun
+        run: scripts/conformance.sh --language node
+
   python:
     name: Python ${{ matrix.python-version }} (${{ matrix.dependencies }})
     runs-on: ubuntu-24.04
@@ -379,7 +418,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [contract, go, node, python, php, ruby, java, dotnet]
+    needs: [contract, go, node, bun, python, php, ruby, java, dotnet]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every job to succeed
