@@ -33,9 +33,15 @@ jobs:
         run: go vet ./...
       - name: Test schemas, fixtures, and mock server
         run: go test -count=1 ./...
-      - name: Root release script tests (manifest validator and package readiness)
+      - name: Root script tests (conformance orchestration, compatibility matrix, manifests, package readiness)
         working-directory: .
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Compatibility matrix matches package metadata, CI, and evidence
+        working-directory: .
+        run: python3 scripts/validate-compatibility-matrix.py
+      - name: Documentation audit
+        working-directory: .
+        run: python3 scripts/audit-docs.py
 
   go:
     name: Go ${{ matrix.profile }} (${{ matrix.go-version }})
