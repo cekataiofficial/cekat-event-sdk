@@ -1,20 +1,20 @@
 # Cekat Go Event SDK
 
-`github.com/cekataiofficial/cekat-event-sdk-go` synchronously submits Cekat events over HTTP. The core module and its standard `net/http` middleware require Go 1.22 or newer and have no third-party dependencies. Gin v1, Echo v4, Fiber v3, and Chi v5 adapters are separate modules, so you only download the framework you use.
+`go.cekat.ai/event-sdk` synchronously submits Cekat events over HTTP. The core module and its standard `net/http` middleware require Go 1.22 or newer and have no third-party dependencies. Gin v1, Echo v4, Fiber v3, and Chi v5 adapters are separate modules, so you only download the framework you use.
 
 ```sh
-go get github.com/cekataiofficial/cekat-event-sdk-go
+go get go.cekat.ai/event-sdk
 # Optional, only for the framework you use:
-go get github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin
+go get go.cekat.ai/event-sdk/middleware/gin
 ```
 
 | Module | Minimum Go |
 | --- | --- |
-| `github.com/cekataiofficial/cekat-event-sdk-go` (includes `middleware/nethttp`) | 1.22 |
-| `github.com/cekataiofficial/cekat-event-sdk-go/middleware/chi` | 1.23 |
-| `github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin` | 1.25 |
-| `github.com/cekataiofficial/cekat-event-sdk-go/middleware/echo` | 1.25 |
-| `github.com/cekataiofficial/cekat-event-sdk-go/middleware/fiber` | 1.25 |
+| `go.cekat.ai/event-sdk` (includes `middleware/nethttp`) | 1.22 |
+| `go.cekat.ai/event-sdk/middleware/chi` | 1.23 |
+| `go.cekat.ai/event-sdk/middleware/gin` | 1.25 |
+| `go.cekat.ai/event-sdk/middleware/echo` | 1.25 |
+| `go.cekat.ai/event-sdk/middleware/fiber` | 1.25 |
 
 ## Construct a client and submit an event
 
@@ -100,23 +100,23 @@ Middleware extracts the visitor identity into a request-local context without mu
 ```go
 // net/http
 mux.Handle("/signup", cekatnethttp.Middleware(http.HandlerFunc(signup)))
-// import cekatnethttp "github.com/cekataiofficial/cekat-event-sdk-go/middleware/nethttp"
+// import cekatnethttp "go.cekat.ai/event-sdk/middleware/nethttp"
 
 // Gin
 router.Use(cekatgin.Middleware())
-// import cekatgin "github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin"
+// import cekatgin "go.cekat.ai/event-sdk/middleware/gin"
 
 // Echo
 e.Use(cekatecho.Middleware())
-// import cekatecho "github.com/cekataiofficial/cekat-event-sdk-go/middleware/echo"
+// import cekatecho "go.cekat.ai/event-sdk/middleware/echo"
 
 // Fiber
 app.Use(cekatfiber.Middleware())
-// import cekatfiber "github.com/cekataiofficial/cekat-event-sdk-go/middleware/fiber"
+// import cekatfiber "go.cekat.ai/event-sdk/middleware/fiber"
 
 // Chi
 r.Use(cekatchi.Middleware)
-// import cekatchi "github.com/cekataiofficial/cekat-event-sdk-go/middleware/chi"
+// import cekatchi "go.cekat.ai/event-sdk/middleware/chi"
 ```
 
 Pass the context that carries the visitor ID:
@@ -165,4 +165,4 @@ A retry can create a **duplicate** event when the first attempt reached the serv
 
 ## Local package preparation
 
-`./scripts/package --version 0.1.0 --output /absolute/empty-directory` runs tests and vet for every module, then creates a deterministic Git-tracked source archive for each publishable module (the core and each `middleware/*` adapter) plus a SHA-256 manifest. Nested modules are tagged with their directory prefix (for example `middleware/gin/v0.1.0`); their `replace` directives only affect local development. It does not publish, sign, create tags, or push changes; those are release-owner responsibilities.
+`./scripts/package --version 0.1.0 --output /absolute/empty-directory` runs tests and vet for every module, then creates a deterministic Git-tracked source archive for each publishable module (the core and each `middleware/*` adapter) plus a SHA-256 manifest. The modules are served from `go.cekat.ai/event-sdk`, whose `go-import` meta tag points at the `go` directory of the `cekataiofficial/cekat-event-sdk` repository, so release tags carry that directory prefix: `go/v0.1.0` for the core and `go/middleware/gin/v0.1.0` for an adapter. The adapters' `replace` directives only affect local development. It does not publish, sign, create tags, or push changes; those are release-owner responsibilities.

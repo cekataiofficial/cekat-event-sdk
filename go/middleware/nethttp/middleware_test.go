@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	cekat "github.com/cekataiofficial/cekat-event-sdk-go"
+	cekat "go.cekat.ai/event-sdk"
 )
 
 func TestMiddlewareEnrichesOnlyDerivedRequestAndPreservesRequestAndResponse(t *testing.T) {

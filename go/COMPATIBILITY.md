@@ -1,15 +1,19 @@
 # Go SDK Compatibility
 
+## Module path update (2026-09-15 UTC)
+
+The module path is the vanity import path `go.cekat.ai/event-sdk` (adapters under `go.cekat.ai/event-sdk/middleware/*`). `https://go.cekat.ai/event-sdk?go-get=1` must serve `<meta name="go-import" content="go.cekat.ai/event-sdk git https://github.com/cekataiofficial/cekat-event-sdk go">`, which maps the module root to the repository's `go` directory, so tags are `go/vX.Y.Z` and `go/middleware/<name>/vX.Y.Z`. The subdirectory field of `go-import` is understood by Go 1.25 and newer; consumers on older toolchains receive the modules through the default module proxy (`proxy.golang.org`), which resolves the path itself. Consumers who bypass the proxy (`GOPROXY=direct`) need Go 1.25 or newer. The `github.com/cekataiofficial/cekat-event-sdk-go` coordinate checks recorded below predate this change.
+
 ## Module layout update (2026-09-13 UTC)
 
 The SDK is split into independently versioned modules so that importing the core never adds framework dependencies to a consumer's module graph or raises their Go floor.
 
-Go module: github.com/cekataiofficial/cekat-event-sdk-go
+Go module: go.cekat.ai/event-sdk
 Selected minimum Go: 1.22
 
 | Module | `go` directive | Tested framework version |
 | --- | --- | --- |
-| `github.com/cekataiofficial/cekat-event-sdk-go` (core and `middleware/nethttp`) | 1.22 | none; standard library only |
+| `go.cekat.ai/event-sdk` (core and `middleware/nethttp`) | 1.22 | none; standard library only |
 | `.../middleware/chi` | 1.23 (from Chi v5.3.2) | Chi v5.3.2 |
 | `.../middleware/gin` | 1.25.0 (from Gin v1.12.0) | Gin v1.12.0 |
 | `.../middleware/echo` | 1.25.0 (from Echo v4.15.4) | Echo v4.15.4 |
@@ -18,7 +22,7 @@ Selected minimum Go: 1.22
 
 Go 1.22 is the core floor because the core uses `math/rand/v2` and Go 1.22 loop-variable semantics. The core package, `middleware/nethttp`, and `internal/retryobserver` tests were executed with the Go 1.22.12 toolchain (`GOTOOLCHAIN=go1.22.12 go test -ldflags=-linkmode=external`; external linking is only required because macOS 26 rejects binaries produced by the Go 1.22 internal linker) and with Go 1.26.5. `go vet` reports no use of standard-library APIs newer than each module's `go` directive.
 
-Adapter modules keep the framework versions below as their minimum requirements. Each adapter's `go.mod` contains `replace github.com/cekataiofficial/cekat-event-sdk-go => ../..` for local development; `replace` directives are ignored when the module is consumed as a dependency. Nested modules are released with directory-prefixed tags such as `middleware/gin/v0.1.0`, and each adapter's core requirement must name a published core version at release time.
+Adapter modules keep the framework versions below as their minimum requirements. Each adapter's `go.mod` contains `replace go.cekat.ai/event-sdk => ../..` for local development; `replace` directives are ignored when the module is consumed as a dependency. Nested modules are released with directory-prefixed tags such as `middleware/gin/v0.1.0`, and each adapter's core requirement must name a published core version at release time.
 
 The sections below record the original single-module evidence from 2026-09-10 and are retained for history.
 

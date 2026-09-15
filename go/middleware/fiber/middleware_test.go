@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	cekat "github.com/cekataiofficial/cekat-event-sdk-go"
 	fiberlib "github.com/gofiber/fiber/v3"
 	fiberecover "github.com/gofiber/fiber/v3/middleware/recover"
+	cekat "go.cekat.ai/event-sdk"
 )
 
 type priorKey struct{}

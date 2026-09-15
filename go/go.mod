@@ -1,3 +1,3 @@
-module github.com/cekataiofficial/cekat-event-sdk-go
+module go.cekat.ai/event-sdk
 
 go 1.22

@@ -2,8 +2,8 @@
 package gin
 
 import (
-	cekat "github.com/cekataiofficial/cekat-event-sdk-go"
 	"github.com/gin-gonic/gin"
+	cekat "go.cekat.ai/event-sdk"
 )
 
 // Middleware adds a request-local visitor ID, when supplied by the request, to

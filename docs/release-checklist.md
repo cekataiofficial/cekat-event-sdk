@@ -28,11 +28,11 @@ Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md
 
 Complete these outside the workflows; they are not automated:
 
-- [ ] **Registry ownership and coordinates.** Confirm Cekat controls each package name: npm `@cekat/event-sdk`, PyPI `cekat-event-sdk`, Packagist `cekat/event-sdk`, RubyGems `cekat-event-sdk`, NuGet `Cekat.EventSdk`, `Cekat.EventSdk.AspNetCore`, and `Cekat.EventSdk.AzureFunctions`, Maven Central group `ai.cekat` (namespace verification is still open; see [`java/compatibility.md`](../java/compatibility.md)), and the Go module path `github.com/cekataiofficial/cekat-event-sdk-go` with its adapter modules.
+- [ ] **Registry ownership and coordinates.** Confirm Cekat controls each package name: npm `@cekat/event-sdk`, PyPI `cekat-event-sdk`, Packagist `cekat/event-sdk`, RubyGems `cekat-event-sdk`, NuGet `Cekat.EventSdk`, `Cekat.EventSdk.AspNetCore`, and `Cekat.EventSdk.AzureFunctions`, Maven Central group `ai.cekat` (namespace verification is still open; see [`java/compatibility.md`](../java/compatibility.md)), and the Go vanity path `go.cekat.ai/event-sdk`: `https://go.cekat.ai/event-sdk?go-get=1` must serve the `go-import` meta tag described in [`go/COMPATIBILITY.md`](../go/COMPATIBILITY.md#module-path-update-2026-09-15-utc).
 - [ ] **License and legal review** of the MIT license and third-party dependencies.
 - [ ] **Changelog and release notes** approved for every SDK.
 - [ ] **Signing**, where a registry requires or you choose it (for example Maven Central artifact signatures), performed by the release owner.
 - [ ] **Credentials or trusted publishing** configured by the release owner; no workflow in this repository holds registry credentials.
-- [ ] **Tags.** Go adapter modules are tagged with their directory prefix (for example `middleware/gin/v0.1.0`), and each adapter must require a published core version.
+- [ ] **Tags.** Go modules are tagged with the `go/` directory prefix (`go/v0.1.0`, `go/middleware/gin/v0.1.0`), and each adapter must require a published core version.
 - [ ] **Publication** of exactly the verified artifacts: compare each file's SHA-256 with the release readiness summary before uploading.
 - [ ] **Post-release check.** Install each published package into a clean project and send a test event to a non-production tenant.

@@ -4,7 +4,7 @@ package nethttp
 import (
 	"net/http"
 
-	cekat "github.com/cekataiofficial/cekat-event-sdk-go"
+	cekat "go.cekat.ai/event-sdk"
 )
 
 // Middleware adds a request-local visitor ID, when supplied by the request, to

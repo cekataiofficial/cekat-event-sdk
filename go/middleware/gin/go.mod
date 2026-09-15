@@ -1,10 +1,10 @@
-module github.com/cekataiofficial/cekat-event-sdk-go/middleware/gin
+module go.cekat.ai/event-sdk/middleware/gin
 
 go 1.25.0
 
 require (
-	github.com/cekataiofficial/cekat-event-sdk-go v0.1.0
 	github.com/gin-gonic/gin v1.12.0
+	go.cekat.ai/event-sdk v0.1.0
 )
 
 require (
@@ -39,4 +39,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace github.com/cekataiofficial/cekat-event-sdk-go => ../..
+replace go.cekat.ai/event-sdk => ../..

@@ -2,6 +2,405 @@
 
 Backend SDKs that submit Cekat events and correlate them with the browser visitor. Implemented: [Go](go/README.md), [Node.js and Bun](node/README.md), [Python](python/README.md), [PHP](php/README.md), [Ruby](ruby/README.md), [Java](java/README.md), and [.NET](dotnet/README.md).
 
+## How to use
+
+Every SDK works the same way:
+
+1. **Install** the package for your language.
+2. **Create one client** with your Cekat access token (server-side only; never ship it to a browser) and **send events**: a common event such as `user_login`, or a custom event with your own key.
+3. **Add the middleware** for your web framework.
+
+**Why the middleware?** The Cekat browser SDK remembers each anonymous visitor in the `_cekat_visitor_id` cookie (or sends it as the `X-Cekat-Visitor-ID` header to cross-origin APIs). The middleware reads that value on every request, so any event you send while handling the request carries the visitor ID automatically. When an event has both the visitor ID and an email or phone number, Cekat links the anonymous visitor to that contact. **Without middleware**, read the cookie yourself and pass it as the event's visitor ID, as each section below shows. Visitor IDs come from the browser and are untrusted: use them only for this correlation, never for authentication.
+
+<details>
+<summary><strong>Go</strong></summary>
+
+**Install**
+
+```sh
+go get go.cekat.ai/event-sdk
+go get go.cekat.ai/event-sdk/middleware/gin   # only the adapter for your framework: gin, echo, fiber, or chi
+```
+
+**Send events**
+
+```go
+import cekat "go.cekat.ai/event-sdk"
+
+client, err := cekat.New(os.Getenv("CEKAT_ACCESS_TOKEN"))
+
+// Common event
+_, err = client.UserLogin(r.Context(), cekat.Event{Email: "ada@example.com"})
+
+// Custom event
+_, err = client.CustomEvent(r.Context(), "trial_started", cekat.Event{
+    Email:      "ada@example.com",
+    Properties: map[string]any{"plan": "pro"},
+})
+```
+
+**Middleware** (pass the request's context to the client, as shown)
+
+```go
+// net/http — import cekatnethttp "go.cekat.ai/event-sdk/middleware/nethttp"
+mux.Handle("/login", cekatnethttp.Middleware(http.HandlerFunc(login)))       // client.UserLogin(r.Context(), ...)
+
+// Gin — import cekatgin "go.cekat.ai/event-sdk/middleware/gin"
+router.Use(cekatgin.Middleware())                                             // client.UserLogin(c.Request.Context(), ...)
+
+// Echo — import cekatecho "go.cekat.ai/event-sdk/middleware/echo"
+e.Use(cekatecho.Middleware())                                                 // client.UserLogin(c.Request().Context(), ...)
+
+// Fiber — import cekatfiber "go.cekat.ai/event-sdk/middleware/fiber"
+app.Use(cekatfiber.Middleware())                                              // client.UserLogin(c.Context(), ...)
+
+// Chi — import cekatchi "go.cekat.ai/event-sdk/middleware/chi"
+r.Use(cekatchi.Middleware)                                                    // client.UserLogin(r.Context(), ...)
+```
+
+**Without middleware**
+
+```go
+visitorID := ""
+if cookie, err := r.Cookie("_cekat_visitor_id"); err == nil {
+    visitorID = cookie.Value
+}
+_, err = client.UserLogin(r.Context(), cekat.Event{Email: "ada@example.com", VisitorID: visitorID})
+```
+
+More: [go/README.md](go/README.md)
+
+</details>
+
+<details>
+<summary><strong>Node.js and Bun</strong></summary>
+
+**Install**
+
+```sh
+npm install @cekat/event-sdk    # or: bun add @cekat/event-sdk
+```
+
+**Send events**
+
+```ts
+import { Client } from '@cekat/event-sdk';
+
+const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
+
+// Common event
+await cekat.userLogin({ email: 'ada@example.com' });
+
+// Custom event
+await cekat.customEvent('trial_started', { email: 'ada@example.com', properties: { plan: 'pro' } });
+```
+
+**Middleware**
+
+```ts
+// Express
+import { visitorMiddleware } from '@cekat/event-sdk/express';
+app.use(visitorMiddleware());
+
+// Fastify
+import { visitorPlugin } from '@cekat/event-sdk/fastify';
+await app.register(visitorPlugin);
+
+// Koa
+import { visitorMiddleware as cekatVisitor } from '@cekat/event-sdk/koa';
+app.use(cekatVisitor());
+
+// NestJS (in your module's configure(consumer))
+import { CekatVisitorMiddleware } from '@cekat/event-sdk/nestjs';
+consumer.apply(CekatVisitorMiddleware).forRoutes('*');
+
+// Next.js, Node runtime only. Pages Router, pages/api/login.ts:
+import { withCekatVisitor } from '@cekat/event-sdk/nextjs';
+export default withCekatVisitor(async (req, res) => { await cekat.userLogin({ email: req.body.email }); res.end(); });
+
+// Next.js App Router, app/api/login/route.ts (also add: export const runtime = 'nodejs'):
+import { runWithCekatVisitor } from '@cekat/event-sdk/nextjs';
+export async function POST(request: Request) {
+  return runWithCekatVisitor(request, async () => { await cekat.userLogin({ email: 'ada@example.com' }); return new Response('ok'); });
+}
+
+// Bun.serve, Hono, Elysia
+import { withCekatVisitor as withVisitor, runWithCekatVisitor as runWithVisitor } from '@cekat/event-sdk/fetch';
+Bun.serve({ fetch: withVisitor(app.fetch) });              // wraps any fetch handler, including Hono and Elysia apps
+honoApp.use((c, next) => runWithVisitor(c.req.raw, next)); // or as Hono middleware
+```
+
+**Without middleware** (Express with `cookie-parser`)
+
+```ts
+await cekat.userLogin({ email: 'ada@example.com', visitorId: req.cookies._cekat_visitor_id });
+```
+
+More: [node/README.md](node/README.md)
+
+</details>
+
+<details>
+<summary><strong>Python</strong></summary>
+
+**Install**
+
+```sh
+pip install cekat-event-sdk    # extras: "cekat-event-sdk[django]", [flask], [asgi], or [fastapi]
+```
+
+**Send events**
+
+```python
+import os
+from cekat_event_sdk import Client, Event
+
+cekat = Client(os.environ["CEKAT_ACCESS_TOKEN"])   # AsyncClient offers the same methods with await
+
+# Common event
+cekat.user_login(Event(email="ada@example.com"))
+
+# Custom event
+cekat.custom_event("trial_started", Event(email="ada@example.com", properties={"plan": "pro"}))
+```
+
+**Middleware**
+
+```python
+# Django: settings.py
+MIDDLEWARE = [
+    # ...
+    "cekat_event_sdk.integrations.django.DjangoVisitorMiddleware",
+]
+
+# Flask
+from cekat_event_sdk.integrations.flask import CekatVisitor
+CekatVisitor(app)
+
+# FastAPI and Starlette
+from cekat_event_sdk.integrations.asgi import VisitorMiddleware
+app.add_middleware(VisitorMiddleware)
+```
+
+**Without middleware**
+
+```python
+visitor_id = request.cookies.get("_cekat_visitor_id")   # Django: request.COOKIES.get("_cekat_visitor_id")
+cekat.user_login(Event(email="ada@example.com", visitor_id=visitor_id))
+```
+
+More: [python/README.md](python/README.md)
+
+</details>
+
+<details>
+<summary><strong>PHP</strong></summary>
+
+**Install**
+
+```sh
+composer require cekat/event-sdk
+```
+
+**Send events**
+
+```php
+use Cekat\EventSdk\Client;
+use Cekat\EventSdk\EventInput;
+
+$cekat = new Client(getenv('CEKAT_ACCESS_TOKEN'));
+
+// Common event
+$cekat->userLogin(new EventInput(email: 'ada@example.com'));
+
+// Custom event
+$cekat->customEvent('trial_started', new EventInput(email: 'ada@example.com', properties: ['plan' => 'pro']));
+```
+
+**Middleware**
+
+```php
+// Laravel: set 'cekat' => ['access_token' => env('CEKAT_ACCESS_TOKEN')] in config/services.php,
+// then in bootstrap/app.php (inject Cekat\EventSdk\Client where you send events):
+use Cekat\EventSdk\Integration\Laravel\VisitorMiddleware;
+->withMiddleware(function (Middleware $middleware) {
+    $middleware->append(VisitorMiddleware::class);
+})
+
+// PSR-15 (Slim, Mezzio, and others)
+use Cekat\EventSdk\Integration\Psr15\VisitorMiddleware as CekatVisitorMiddleware;
+$app->add(new CekatVisitorMiddleware());
+```
+
+```yaml
+# Symfony: config/services.yaml
+services:
+    Cekat\EventSdk\Context\VisitorContextInterface:
+        class: Cekat\EventSdk\Context\VisitorContext
+    Cekat\EventSdk\Client:
+        arguments:
+            $accessToken: '%env(CEKAT_ACCESS_TOKEN)%'
+            $visitorContext: '@Cekat\EventSdk\Context\VisitorContextInterface'
+    Cekat\EventSdk\Integration\Symfony\VisitorContextKernel:
+        decorates: http_kernel
+        arguments: ['@.inner', '@Cekat\EventSdk\Context\VisitorContextInterface']
+```
+
+**Without middleware**
+
+```php
+$cekat->userLogin(new EventInput(email: 'ada@example.com', visitorId: $_COOKIE['_cekat_visitor_id'] ?? null));
+```
+
+More: [php/README.md](php/README.md)
+
+</details>
+
+<details>
+<summary><strong>Java</strong></summary>
+
+**Install** (Maven; use `cekat-event-sdk-jakarta-servlet` for a plain servlet app, or `cekat-event-sdk-core` for the client alone)
+
+```xml
+<dependency>
+  <groupId>ai.cekat</groupId>
+  <artifactId>cekat-event-sdk-spring-boot</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+**Send events**
+
+```java
+CekatClient cekat = new CekatClient(System.getenv("CEKAT_ACCESS_TOKEN"));
+
+// Common event
+cekat.userLogin(Event.builder().email("ada@example.com").build());
+
+// Custom event
+cekat.customEvent("trial_started", Event.builder().email("ada@example.com").property("plan", "pro").build());
+```
+
+**Middleware**
+
+```properties
+# Spring Boot: the visitor filter registers automatically; set the token to get an injectable CekatClient bean
+cekat.access-token=${CEKAT_ACCESS_TOKEN}
+```
+
+```java
+// Jakarta Servlet
+FilterRegistration.Dynamic filter = servletContext.addFilter("cekatVisitorFilter", new CekatVisitorFilter());
+filter.setAsyncSupported(true);
+filter.addMappingForUrlPatterns(EnumSet.of(DispatcherType.REQUEST, DispatcherType.ASYNC, DispatcherType.ERROR), false, "/*");
+```
+
+**Without middleware** (Spring MVC)
+
+```java
+@PostMapping("/login")
+void login(@CookieValue(name = "_cekat_visitor_id", required = false) String visitorId) throws InterruptedException {
+    cekat.userLogin(Event.builder().email("ada@example.com").visitorId(visitorId).build());
+}
+```
+
+More: [java/README.md](java/README.md)
+
+</details>
+
+<details>
+<summary><strong>.NET</strong></summary>
+
+**Install**
+
+```sh
+dotnet add package Cekat.EventSdk.AspNetCore        # or Cekat.EventSdk.AzureFunctions, or Cekat.EventSdk for the client alone
+```
+
+**Send events**
+
+```csharp
+using Cekat.EventSdk;
+
+var cekat = new CekatClient(new CekatClientOptions { AccessToken = Environment.GetEnvironmentVariable("CEKAT_ACCESS_TOKEN") });
+
+// Common event
+await cekat.UserLoginAsync(new EventInput(Email: "ada@example.com"));
+
+// Custom event
+await cekat.CustomEventAsync("trial_started", new EventInput(Email: "ada@example.com", Properties: new Dictionary<string, object?> { ["plan"] = "pro" }));
+```
+
+**Middleware**
+
+```csharp
+// ASP.NET Core: Program.cs (inject CekatClient into your endpoints)
+builder.Services.AddCekatEventSdk(options => options.AccessToken = builder.Configuration["Cekat:AccessToken"]);
+var app = builder.Build();
+app.UseCekatVisitor();
+
+// Azure Functions (isolated worker): Program.cs
+var functions = FunctionsApplication.CreateBuilder(args);
+functions.UseCekatVisitor();
+functions.Services.AddCekatEventSdk(options => options.AccessToken = Environment.GetEnvironmentVariable("CEKAT_ACCESS_TOKEN"));
+functions.Build().Run();
+```
+
+**Without middleware**
+
+```csharp
+await cekat.UserLoginAsync(new EventInput(Email: "ada@example.com", VisitorId: httpContext.Request.Cookies["_cekat_visitor_id"]));
+```
+
+More: [dotnet/README.md](dotnet/README.md)
+
+</details>
+
+<details>
+<summary><strong>Ruby</strong></summary>
+
+**Install**
+
+```sh
+bundle add cekat-event-sdk
+```
+
+**Send events**
+
+```ruby
+require "cekat_event_sdk"
+
+CEKAT = CekatEventSdk::Client.new(access_token: ENV.fetch("CEKAT_ACCESS_TOKEN"))
+
+# Common event
+CEKAT.user_login(email: "ada@example.com")
+
+# Custom event
+CEKAT.custom_event("trial_started", email: "ada@example.com", properties: { plan: "pro" })
+```
+
+**Middleware**
+
+```ruby
+# Rails: nothing to add; the middleware is inserted automatically.
+# Create the client in config/initializers/cekat.rb as shown above.
+
+# Rack (Sinatra, Hanami, Roda, and others): config.ru
+use CekatEventSdk::Rack::Middleware
+```
+
+**Without middleware** (Rails controller)
+
+```ruby
+CEKAT.user_login(email: "ada@example.com", visitor_id: cookies[:_cekat_visitor_id])
+```
+
+More: [ruby/README.md](ruby/README.md)
+
+</details>
+
+The middleware also prefers a nonblank `X-Cekat-Visitor-ID` header over the cookie. If you read the value yourself for cross-origin requests, check that header first, then the cookie.
+
 ## Documentation
 
 - [SDK contract](docs/sdk-contract.md): client settings, the request and payload, the five operations, acknowledgements, and error categories shared by every SDK.
