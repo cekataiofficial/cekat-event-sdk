@@ -1,6 +1,6 @@
 # Release checklist
 
-The only publishing automation is `.github/workflows/release-node.yml`, which releases the npm package when a release owner pushes a `node/vX.Y.Z` tag (see [npm release](#4-npm-release)). Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
+Two workflows release: `.github/workflows/release-node.yml` publishes the npm package when a release owner pushes a `node/vX.Y.Z` tag (see [npm release](#4-npm-release)), and `.github/workflows/release-go.yml` tags and releases the Go modules when a release owner pushes a `go/vX.Y.Z` tag (see [Go release](#5-go-release)). Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
 
 Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md).
 
@@ -33,7 +33,7 @@ Complete these outside the workflows; they are not automated:
 - [ ] **Changelog and release notes** approved for every SDK.
 - [ ] **Signing**, where a registry requires or you choose it (for example Maven Central artifact signatures), performed by the release owner.
 - [ ] **Credentials or trusted publishing** configured by the release owner; no workflow in this repository holds registry credentials (the npm release uses trusted publishing, described below).
-- [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.1.0`, `go/middleware/gin/v0.1.0`), and each adapter must require a published core version. The npm package is tagged `node/v0.1.0`.
+- [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.1.0`, `go/middleware/gin/v0.1.0`); pushing the core tag creates the adapter tags. The npm package is tagged `node/v0.1.0`.
 - [ ] **Publication** of exactly the verified artifacts: compare each file's SHA-256 with the release readiness summary before uploading.
 - [ ] **Post-release check.** Install each published package into a clean project and send a test event to a non-production tenant.
 
@@ -55,3 +55,31 @@ Each release:
 3. The `build` job runs `scripts/package-readiness.sh --language node` on a GitHub-hosted runner and uploads the verified tarball and manifest.
 4. The `publish` job waits for approval in the `npm` environment, then runs on a separate GitHub-hosted runner, as npm trusted publishing requires. It checks the manifest hashes, the package name and version inside the tarball, and that the version is not already on npm, then publishes that tarball. npm adds a provenance attestation only when the GitHub repository is public. A version containing `-` gets the `next` dist-tag; any other version gets `latest`.
 5. Confirm the version page on npmjs.com shows the new version (and the provenance badge once the repository is public), then run the post-release check above.
+
+## 5. Go release
+
+Go has no registry upload: the tags in this repository are the release, and `go get` reads them through `proxy.golang.org`. `.github/workflows/release-go.yml` turns one core tag into the complete set.
+
+One-time setup:
+
+1. The GitHub repository must be public, and `golang.cekat.ai` must serve the per-module `go-import` meta tags described in [`go/COMPATIBILITY.md`](../go/COMPATIBILITY.md#module-path-update-2026-09-15-utc). Until both are true, the modules resolve for nobody and the workflow's proxy step reports the paths it could not resolve.
+2. Create a GitHub environment named `go-release` with the release owners as required reviewers, and restrict its deployment tags to `go/v*`.
+3. In the tag ruleset that restricts `go/**`, add the GitHub Actions token to the bypass list. Without it the workflow cannot create the four adapter tags.
+
+Each release:
+
+1. Set every adapter's core requirement to the version being released: `require golang.cekat.ai/event-sdk vX.Y.Z` in `go/middleware/<name>/go.mod`. The workflow refuses the release otherwise, because a published tag cannot be corrected.
+2. Merge, wait for `CI required`, then push the core tag on the release commit:
+
+   ```sh
+   git fetch origin && git tag go/v0.1.0 origin/main && git push origin go/v0.1.0
+   ```
+
+3. The `verify` job checks the tag shape and the adapter requirements, then runs `scripts/package-readiness.sh --language go`, which tests and vets every module and builds the five archives with their SHA-256 manifest.
+4. Approve the `release` job in the `go-release` environment. It confirms the tagged commit is on `main` and the archives carry the released version, creates `go/middleware/{chi,echo,fiber,gin}/vX.Y.Z` at the same commit, publishes a GitHub Release per module with its archive attached, and asks `proxy.golang.org` for each module path so pkg.go.dev indexes it. Rerunning the job is safe: existing tags and releases are left alone.
+5. Confirm from a clean directory that the modules resolve:
+
+   ```sh
+   go list -m golang.cekat.ai/event-sdk@v0.1.0 golang.cekat.ai/event-sdk/middleware/gin@v0.1.0
+   ```
+

@@ -1,0 +1,178 @@
+name: Release Go modules
+
+# Releases the Go SDK when a release owner pushes the core tag go/vX.Y.Z. Go has no registry upload: the
+# tags are the release, so this workflow verifies the commit, creates the four adapter tags at the same
+# commit, publishes a GitHub Release for each module with the archives built by go/scripts/package, and
+# asks the public module proxy for each module path so pkg.go.dev indexes it. It holds no secrets; the
+# tag-creating job waits for approval through the "go-release" environment. The repository's tag ruleset
+# must allow the GitHub Actions token to create go/middleware/*/v* tags.
+on:
+  push:
+    tags:
+      - 'go/v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-go-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify and package the Go modules
+    runs-on: platform-ci-aws
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache-dependency-path: go/**/go.sum
+      - name: Read the released version from the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#go/v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::tag $TAG is not of the form go/vX.Y.Z"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # A published adapter tag can never be corrected, so refuse to release one that requires a different
+      # core version than the one being tagged.
+      - name: Every adapter requires the released core version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          status=0
+          for manifest in go/middleware/*/go.mod; do
+            required="$(awk '$1 == "require" && $2 == "golang.cekat.ai/event-sdk" { print $3 } $1 == "golang.cekat.ai/event-sdk" { print $2 }' "$manifest")"
+            if [ "$required" != "v$VERSION" ]; then
+              echo "::error file=$manifest::requires core ${required:-nothing}, expected v$VERSION"
+              status=1
+            fi
+          done
+          exit "$status"
+      - name: Build and validate the module archives
+        run: scripts/package-readiness.sh --language go --output "$RUNNER_TEMP/cekat-artifacts"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: go-modules
+          path: ${{ runner.temp }}/cekat-artifacts/go
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Tag the adapters and publish the GitHub Releases
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: go-release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - uses: actions/download-artifact@v8
+        with:
+          name: go-modules
+          path: ${{ runner.temp }}/go-modules
+      - name: The tagged commit is on main
+        run: |
+          status="$(gh api "repos/$REPO/compare/main...$SHA" --jq .status)"
+          case "$status" in
+            identical|behind) ;;
+            *) echo "::error::the tagged commit is not on main (compare status: $status)"; exit 1 ;;
+          esac
+      - name: The archives match the released version
+        run: |
+          ARTIFACTS="$RUNNER_TEMP/go-modules"
+          version="$(jq -r .version "$ARTIFACTS/manifest.json")"
+          if [ "$version" != "$VERSION" ]; then
+            echo "::error::the archives are version $version, expected $VERSION"
+            exit 1
+          fi
+          for adapter in chi echo fiber gin; do
+            test -f "$ARTIFACTS/cekat-event-sdk-go-middleware-$adapter-v$VERSION.zip"
+          done
+          test -f "$ARTIFACTS/cekat-event-sdk-go-v$VERSION.zip"
+      # Go resolves an adapter import through its own tag, so each adapter needs a tag at this commit.
+      - name: Create the adapter tags
+        run: |
+          for adapter in chi echo fiber gin; do
+            tag="go/middleware/$adapter/v$VERSION"
+            if gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "tag $tag already exists"
+              continue
+            fi
+            gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$SHA" >/dev/null
+            echo "created tag $tag"
+          done
+      - name: Publish a GitHub Release for each module
+        run: |
+          ARTIFACTS="$RUNNER_TEMP/go-modules"
+          publish() { # tag, title, module path, repository directory, archive...
+            if gh release view "$1" --repo "$REPO" >/dev/null 2>&1; then
+              echo "release $1 already exists"
+              return
+            fi
+            notes="$RUNNER_TEMP/notes.md"
+            {
+              echo "\`\`\`sh"
+              echo "go get $3@v$VERSION"
+              echo "\`\`\`"
+              echo ""
+              echo "Source archive and SHA-256 hashes are attached. The module is served from the vanity path \`$3\` and lives in \`$4/\` in this repository."
+            } > "$notes"
+            gh release create "$1" --repo "$REPO" --target "$SHA" --title "$2" --notes-file "$notes" "${@:5}"
+          }
+          publish "go/v$VERSION" "Go SDK v$VERSION" golang.cekat.ai/event-sdk go \
+            "$ARTIFACTS/cekat-event-sdk-go-v$VERSION.zip" "$ARTIFACTS/manifest.json"
+          for adapter in chi echo fiber gin; do
+            publish "go/middleware/$adapter/v$VERSION" "Go $adapter adapter v$VERSION" \
+              "golang.cekat.ai/event-sdk/middleware/$adapter" "go/middleware/$adapter" \
+              "$ARTIFACTS/cekat-event-sdk-go-middleware-$adapter-v$VERSION.zip"
+          done
+      # Fetching each path once makes the proxy cache the version and pkg.go.dev index it. This needs the
+      # repository to be public and golang.cekat.ai to serve the go-import meta tags, so a failure here is
+      # reported without failing the release.
+      - name: Warm the public module proxy
+        run: |
+          directory="$(mktemp -d)"
+          cd "$directory"
+          go mod init warm >/dev/null
+          warmed=''
+          cold=''
+          for module in golang.cekat.ai/event-sdk golang.cekat.ai/event-sdk/middleware/chi golang.cekat.ai/event-sdk/middleware/echo golang.cekat.ai/event-sdk/middleware/fiber golang.cekat.ai/event-sdk/middleware/gin; do
+            if GOPROXY=https://proxy.golang.org GOFLAGS=-mod=mod go list -m "$module@v$VERSION" >/dev/null 2>&1; then
+              warmed="$warmed $module"
+            else
+              cold="$cold $module"
+            fi
+          done
+          if [ -n "$cold" ]; then
+            echo "::warning::the module proxy could not resolve:$cold (the repository must be public and golang.cekat.ai must serve the go-import meta tags)"
+          fi
+          {
+            echo "### Go modules v$VERSION"
+            echo ""
+            echo "Tagged and released: core and the chi, echo, fiber, and gin adapters."
+            echo ""
+            echo "Resolved through proxy.golang.org:${warmed:- none}"
+            if [ -n "$cold" ]; then
+              echo ""
+              echo "Not resolved:$cold"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
