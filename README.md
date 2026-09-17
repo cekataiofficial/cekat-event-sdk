@@ -1,5 +1,3 @@
-# Cekat Event SDK
-
 ![Cekat Event SDK](assets/cekat_event_sdk.jpeg)
 
 Backend SDKs that submit Cekat events and correlate them with the browser visitor. Implemented: [Go](go/README.md), [Node.js and Bun](node/README.md), [Python](python/README.md), [PHP](php/README.md), [Ruby](ruby/README.md), [Java](java/README.md), and [.NET](dotnet/README.md).
@@ -444,7 +442,7 @@ With `--as-of`, it also fails when a supported line has reached end of support o
 
 ## Release readiness
 
-Before a release, run the **Release readiness** workflow (`.github/workflows/release-readiness.yml`, manual trigger only). It builds every SDK with its own `scripts/package` on the current toolchain, validates each `manifest.json` and the complete seven-language set, and keeps the artifacts as workflow artifacts for 14 days, with a summary table of file names, sizes, and SHA-256 hashes. Registry setup, signing, tags, and publication remain release-owner steps; the workflow lists them without performing them. The one exception is npm: pushing a `node/vX.Y.Z` tag starts `.github/workflows/release-node.yml`, which rebuilds and verifies the Node.js package and, after approval in the `npm` environment, publishes it through npm trusted publishing (see the [release checklist](docs/release-checklist.md#4-npm-release)).
+Before a release, run the **Release readiness** workflow (`.github/workflows/release-readiness.yml`, manual trigger only). It builds every SDK with its own `scripts/package` on the current toolchain, validates each `manifest.json` and the complete seven-language set, and keeps the artifacts as workflow artifacts for 14 days, with a summary table of file names, sizes, and SHA-256 hashes. Registry setup, signing, tags, and publication remain release-owner steps; the workflow lists them without performing them. Two languages are automated. Pushing a `node/vX.Y.Z` tag starts `.github/workflows/release-node.yml`, which rebuilds and verifies the Node.js package and, after approval in the `npm` environment, publishes it through npm trusted publishing. Pushing a `go/vX.Y.Z` tag starts `.github/workflows/release-go.yml`, which verifies the commit and every adapter's core requirement, then, after approval in the `go-release` environment, creates the four adapter tags, publishes a GitHub Release per Go module, and warms the public module proxy. Both are described in the [release checklist](docs/release-checklist.md#4-npm-release).
 
 Locally (each language's toolchain must be installed):
 

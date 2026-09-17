@@ -24,6 +24,7 @@ VALIDATOR = ROOT / "scripts" / "validate-package-manifest.py"
 WRAPPER = ROOT / "scripts" / "package-readiness.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "release-readiness.yml"
 NODE_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-node.yml"
+GO_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-go.yml"
 SCHEMA = ROOT / "ci" / "package-manifest.schema.json"
 LANGUAGES = ("go", "node", "python", "php", "java", "dotnet", "ruby")
 
@@ -428,16 +429,17 @@ class NoPublishTest(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertIsNone(self.FORBIDDEN.search(path.read_text(encoding="utf-8")))
 
-    def test_only_the_node_release_workflow_publishes(self) -> None:
+    def test_only_the_release_workflows_publish(self) -> None:
         workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
-        self.assertIn(NODE_RELEASE_WORKFLOW, workflows)
+        releases = {NODE_RELEASE_WORKFLOW, GO_RELEASE_WORKFLOW}
+        self.assertTrue(releases.issubset(set(workflows)))
         for path in workflows:
-            if path == NODE_RELEASE_WORKFLOW:
+            if path in releases:
                 continue
             with self.subTest(path=path.name):
                 text = path.read_text(encoding="utf-8")
                 self.assertIsNone(self.FORBIDDEN.search(text))
-                self.assertNotRegex(text, r"(?m)^\s+id-token:\s*write")
+                self.assertNotRegex(text, r"(?m)^\s+(?:id-token|contents|packages):\s*write")
 
 
 class NodeReleaseWorkflowTest(unittest.TestCase):
@@ -472,6 +474,57 @@ class NodeReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("validate-package-manifest.py", self.publish)
         self.assertIn('npm publish "$TARBALL" --access public --tag', self.publish)
         self.assertIsNone(re.search(r"gem push|nuget push|twine upload|cosign|gpg\s|gh release|git tag|git push", self.text, re.IGNORECASE))
+
+
+
+class GoReleaseWorkflowTest(unittest.TestCase):
+    """The Go release creates the adapter tags and GitHub Releases for one verified commit, and nothing else."""
+
+    ADAPTERS = ("chi", "echo", "fiber", "gin")
+
+    def setUp(self) -> None:
+        self.text = GO_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        release = re.search(r"(?ms)^  release:\n(.*)", self.text)
+        self.assertIsNotNone(release)
+        self.release = release.group(1)
+        self.verify = self.text[: release.start()]
+
+    def test_triggers_only_on_core_go_version_tags(self) -> None:
+        trigger = re.search(r"^on:\n((?:[ #].*\n|\n)*?)^\S", self.text, re.MULTILINE)
+        self.assertIsNotNone(trigger)
+        lines = [line.strip() for line in trigger.group(1).splitlines() if line.strip() and not line.strip().startswith("#")]
+        self.assertEqual(lines, ["push:", "tags:", "- 'go/v*'"])
+
+    def test_write_access_is_confined_to_the_approved_release_job(self) -> None:
+        self.assertRegex(self.text, r"(?m)^permissions:\n  contents: read\n")
+        self.assertNotIn("secrets.", self.text)
+        self.assertNotRegex(self.text, r"id-token|persist-credentials: true")
+        self.assertEqual(len(re.findall(r"contents: write", self.text)), 1)
+        self.assertRegex(self.release, r"(?m)^      contents: write$")
+        self.assertRegex(self.release, r"(?m)^    environment: go-release$")
+        self.assertNotRegex(self.verify, r"contents: write|gh api|gh release")
+
+    def test_the_commit_is_verified_before_anything_is_created(self) -> None:
+        self.assertIn('scripts/package-readiness.sh --language go', self.verify)
+        self.assertIn('expected v$VERSION', self.verify)
+        self.assertIn('repos/$REPO/compare/main...$SHA', self.release)
+        commit_check = self.release.index("compare/main")
+        for created in ('gh api "repos/$REPO/git/refs"', "gh release create"):
+            self.assertLess(commit_check, self.release.index(created), created)
+
+    def test_creates_only_the_adapter_tags_for_the_released_version(self) -> None:
+        self.assertIn('tag="go/middleware/$adapter/v$VERSION"', self.release)
+        self.assertEqual(len(re.findall(r'gh api "repos/\$REPO/git/refs"', self.release)), 1)
+        self.assertIn('-f "ref=refs/tags/$tag" -f "sha=$SHA"', self.release)
+        for adapter in self.ADAPTERS:
+            self.assertIn(adapter, self.release)
+        self.assertIsNone(re.search(r"npm publish|gem push|nuget push|twine upload|git push|secrets\.", self.text, re.IGNORECASE))
+
+    def test_never_publishes_to_a_registry_and_keeps_the_proxy_step_advisory(self) -> None:
+        self.assertIn("GOPROXY=https://proxy.golang.org", self.release)
+        proxy = self.release[self.release.index("Warm the public module proxy") :]
+        self.assertNotIn("exit 1", proxy)
+        self.assertIn("::warning::", proxy)
 
 
 if __name__ == "__main__":
