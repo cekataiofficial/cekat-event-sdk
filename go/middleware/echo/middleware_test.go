@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v4"
-	cekat "go.cekat.ai/event-sdk"
+	cekat "golang.cekat.ai/event-sdk"
 )
 
 func TestMiddlewareEnrichesEchoRequestAndPreservesOriginalRequest(t *testing.T) {

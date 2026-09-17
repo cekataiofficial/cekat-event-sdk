@@ -222,7 +222,7 @@ Framework adapters stay thin. Where an ecosystem resolves dependencies per packa
 Initial package coordinates follow Cekat conventions:
 
 - Go: Cekat-owned module ending in `cekat-event-sdk-go`
-- npm: `@cekat/event-sdk`
+- npm: `@cekatai/event-sdk`
 - Python: `cekat-event-sdk`
 - Composer: `cekat/event-sdk`
 - Java: Cekat group with `cekat-event-sdk-*` artifacts

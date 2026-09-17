@@ -81,7 +81,7 @@ func TestPrepareWritesDeterministicManifestAndTokenFreeArchive(t *testing.T) {
 	archivePaths := make([]string, 0, len(archive.File))
 	for _, file := range archive.File {
 		archivePaths = append(archivePaths, file.Name)
-		if !strings.HasPrefix(file.Name, "go.cekat.ai/event-sdk@v0.1.0/") {
+		if !strings.HasPrefix(file.Name, "golang.cekat.ai/event-sdk@v0.1.0/") {
 			t.Errorf("archive path %q does not use the module-version root", file.Name)
 		}
 		reader, err := file.Open()
@@ -89,7 +89,7 @@ func TestPrepareWritesDeterministicManifestAndTokenFreeArchive(t *testing.T) {
 			t.Fatalf("open archive entry %q: %v", file.Name, err)
 		}
 		reader.Close()
-		if _, err := os.Stat(filepath.Join(moduleRoot, filepath.FromSlash(strings.TrimPrefix(file.Name, "go.cekat.ai/event-sdk@v0.1.0/")))); err != nil {
+		if _, err := os.Stat(filepath.Join(moduleRoot, filepath.FromSlash(strings.TrimPrefix(file.Name, "golang.cekat.ai/event-sdk@v0.1.0/")))); err != nil {
 			t.Fatalf("archive entry %q is not a tracked source file: %v", file.Name, err)
 		}
 	}
@@ -109,10 +109,10 @@ func TestPrepareWritesDeterministicManifestAndTokenFreeArchive(t *testing.T) {
 func TestPrepareWritesOneArchivePerPublishableModule(t *testing.T) {
 	moduleRoot := testModule(t)
 	for path, contents := range map[string]string{
-		"middleware/gin/go.mod":        "module go.cekat.ai/event-sdk/middleware/gin\n\ngo 1.25.0\n",
+		"middleware/gin/go.mod":        "module golang.cekat.ai/event-sdk/middleware/gin\n\ngo 1.25.0\n",
 		"middleware/gin/go.sum":        "",
 		"middleware/gin/middleware.go": "package gin\n",
-		"internal/conformance/go.mod":  "module go.cekat.ai/event-sdk/internal/conformance\n\ngo 1.22\n",
+		"internal/conformance/go.mod":  "module golang.cekat.ai/event-sdk/internal/conformance\n\ngo 1.22\n",
 		"internal/conformance/case.go": "package conformance\n",
 		"internal/shared/shared.go":    "package shared\n",
 	} {
@@ -139,16 +139,16 @@ func TestPrepareWritesOneArchivePerPublishableModule(t *testing.T) {
 	}
 	want := map[string][]string{
 		"cekat-event-sdk-go-middleware-gin-v0.1.0.zip": {
-			"go.cekat.ai/event-sdk/middleware/gin@v0.1.0/go.mod",
-			"go.cekat.ai/event-sdk/middleware/gin@v0.1.0/go.sum",
-			"go.cekat.ai/event-sdk/middleware/gin@v0.1.0/middleware.go",
+			"golang.cekat.ai/event-sdk/middleware/gin@v0.1.0/go.mod",
+			"golang.cekat.ai/event-sdk/middleware/gin@v0.1.0/go.sum",
+			"golang.cekat.ai/event-sdk/middleware/gin@v0.1.0/middleware.go",
 		},
 		"cekat-event-sdk-go-v0.1.0.zip": {
-			"go.cekat.ai/event-sdk@v0.1.0/README.md",
-			"go.cekat.ai/event-sdk@v0.1.0/client.go",
-			"go.cekat.ai/event-sdk@v0.1.0/go.mod",
-			"go.cekat.ai/event-sdk@v0.1.0/internal/shared/shared.go",
-			"go.cekat.ai/event-sdk@v0.1.0/nested/source.go",
+			"golang.cekat.ai/event-sdk@v0.1.0/README.md",
+			"golang.cekat.ai/event-sdk@v0.1.0/client.go",
+			"golang.cekat.ai/event-sdk@v0.1.0/go.mod",
+			"golang.cekat.ai/event-sdk@v0.1.0/internal/shared/shared.go",
+			"golang.cekat.ai/event-sdk@v0.1.0/nested/source.go",
 		},
 	}
 	if len(manifest.Artifacts) != len(want) || manifest.Artifacts[0].Path != "cekat-event-sdk-go-middleware-gin-v0.1.0.zip" {
@@ -279,7 +279,7 @@ func TestREADMEContract(t *testing.T) {
 	}
 	contents := string(readme)
 	for _, required := range []string{
-		"go.cekat.ai/event-sdk",
+		"golang.cekat.ai/event-sdk",
 		"Gin v1, Echo v4, Fiber v3, and Chi v5",
 		"cekat.New(",
 		"context.WithTimeout",

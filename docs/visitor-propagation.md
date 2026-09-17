@@ -39,7 +39,7 @@ Each integration extracts the visitor at the start of a request, makes it curren
 | SDK | Scope mechanism | Integrations | Explicit scope |
 | --- | --- | --- | --- |
 | [Go](../go/README.md) | `context.Context` | `net/http`, Gin, Echo, Fiber, Chi middleware | `cekat.WithVisitorID(ctx, id)` |
-| [Node.js and Bun](../node/README.md) | `AsyncLocalStorage` | Express, Fastify, Koa, NestJS, Next.js (Node runtime); `@cekat/event-sdk/fetch` for `Bun.serve`, Hono, and Elysia | `runWithVisitorId(id, callback)` |
+| [Node.js and Bun](../node/README.md) | `AsyncLocalStorage` | Express, Fastify, Koa, NestJS, Next.js (Node runtime); `@cekatai/event-sdk/fetch` for `Bun.serve`, Hono, and Elysia | `runWithVisitorId(id, callback)` |
 | [Python](../python/README.md) | `contextvars` | Django middleware, Flask extension, ASGI middleware for Starlette and FastAPI | `with visitor_scope(id):` |
 | [PHP](../php/README.md) | request-scoped `VisitorContext` service | PSR-15 middleware, Laravel, Symfony | `VisitorContext::shared()->runWithVisitorId($id, $callback)` |
 | [Java](../java/README.md) | request attribute plus thread-local scope | Jakarta Servlet filter, Spring Boot auto-configuration | `try (VisitorContext.Scope scope = VisitorContext.open(id))` |
@@ -59,4 +59,4 @@ For work that is not carried, read the visitor while handling the request and pa
 
 ## Browser side
 
-For requests to a different origin, the browser helpers in `@cekat/event-sdk/browser` add `X-Cekat-Visitor-ID` explicitly or for an allowlist of origins; the receiving API's CORS policy must allow that header. The browser helpers never contain the access token. See the [Node.js and Bun README](../node/README.md#browser-visitor-propagation).
+For requests to a different origin, the browser helpers in `@cekatai/event-sdk/browser` add `X-Cekat-Visitor-ID` explicitly or for an allowlist of origins; the receiving API's CORS policy must allow that header. The browser helpers never contain the access token. See the [Node.js and Bun README](../node/README.md#browser-visitor-propagation).

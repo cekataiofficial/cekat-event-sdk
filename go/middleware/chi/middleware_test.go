@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	chiv5 "github.com/go-chi/chi/v5"
-	cekat "go.cekat.ai/event-sdk"
+	cekat "golang.cekat.ai/event-sdk"
 )
 
 func TestMiddlewareEnrichesChiDerivedRequestAndPreservesRequestAndResponse(t *testing.T) {

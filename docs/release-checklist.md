@@ -1,6 +1,6 @@
 # Release checklist
 
-Nothing in this repository publishes packages. Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
+The only publishing automation is `.github/workflows/release-node.yml`, which releases the npm package when a release owner pushes a `node/vX.Y.Z` tag (see [npm release](#4-npm-release)). Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
 
 Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md).
 
@@ -28,11 +28,30 @@ Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md
 
 Complete these outside the workflows; they are not automated:
 
-- [ ] **Registry ownership and coordinates.** Confirm Cekat controls each package name: npm `@cekat/event-sdk`, PyPI `cekat-event-sdk`, Packagist `cekat/event-sdk`, RubyGems `cekat-event-sdk`, NuGet `Cekat.EventSdk`, `Cekat.EventSdk.AspNetCore`, and `Cekat.EventSdk.AzureFunctions`, Maven Central group `ai.cekat` (namespace verification is still open; see [`java/compatibility.md`](../java/compatibility.md)), and the Go vanity path `go.cekat.ai/event-sdk`: `https://go.cekat.ai/event-sdk?go-get=1` must serve the `go-import` meta tag described in [`go/COMPATIBILITY.md`](../go/COMPATIBILITY.md#module-path-update-2026-09-15-utc).
+- [ ] **Registry ownership and coordinates.** Confirm Cekat controls each package name: npm `@cekatai/event-sdk`, PyPI `cekat-event-sdk`, Packagist `cekat/event-sdk`, RubyGems `cekat-event-sdk`, NuGet `Cekat.EventSdk`, `Cekat.EventSdk.AspNetCore`, and `Cekat.EventSdk.AzureFunctions`, Maven Central group `ai.cekat` (namespace verification is still open; see [`java/compatibility.md`](../java/compatibility.md)), and the Go vanity path `golang.cekat.ai/event-sdk`: `https://golang.cekat.ai/event-sdk?go-get=1` and each adapter path must serve the per-module `go-import` meta tags described in [`go/COMPATIBILITY.md`](../go/COMPATIBILITY.md#module-path-update-2026-09-15-utc).
 - [ ] **License and legal review** of the MIT license and third-party dependencies.
 - [ ] **Changelog and release notes** approved for every SDK.
 - [ ] **Signing**, where a registry requires or you choose it (for example Maven Central artifact signatures), performed by the release owner.
-- [ ] **Credentials or trusted publishing** configured by the release owner; no workflow in this repository holds registry credentials.
-- [ ] **Tags.** Go modules are tagged with the `go/` directory prefix (`go/v0.1.0`, `go/middleware/gin/v0.1.0`), and each adapter must require a published core version.
+- [ ] **Credentials or trusted publishing** configured by the release owner; no workflow in this repository holds registry credentials (the npm release uses trusted publishing, described below).
+- [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.1.0`, `go/middleware/gin/v0.1.0`), and each adapter must require a published core version. The npm package is tagged `node/v0.1.0`.
 - [ ] **Publication** of exactly the verified artifacts: compare each file's SHA-256 with the release readiness summary before uploading.
 - [ ] **Post-release check.** Install each published package into a clean project and send a test event to a non-production tenant.
+
+## 4. npm release
+
+`@cekatai/event-sdk` is released by `.github/workflows/release-node.yml` through [npm trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token is stored in GitHub.
+
+One-time setup:
+
+1. On npmjs.com, create the `cekatai` organization (or confirm Cekat owns it) and add the release owners as members.
+2. In the GitHub repository settings, create an environment named `npm`: add required reviewers, and restrict its deployment tags to `node/v*`. Add a tag ruleset that allows only release owners to create `node/v*` tags.
+3. On npmjs.com, open the package settings for `@cekatai/event-sdk` and add a trusted publisher: provider GitHub Actions, organization `cekataiofficial`, repository `cekat-event-sdk`, workflow filename `release-node.yml`, environment `npm`. npm only offers these settings once the package exists, so first publish a placeholder version (for example `0.0.0-bootstrap.0` under the `bootstrap` dist-tag) once from a release owner's machine with two-factor authentication, then add the trusted publisher and deprecate the placeholder.
+4. After the trusted publisher works, set the package's publishing access to require two-factor authentication and disallow tokens, so only the workflow can publish.
+
+Each release:
+
+1. Update `version` in `node/package.json` and the package version checked by `node/scripts/package` and `scripts/package-readiness.sh`, merge, and wait for `CI required`.
+2. Push the tag `node/v<version>` on the release commit.
+3. The `build` job runs `scripts/package-readiness.sh --language node` on a GitHub-hosted runner and uploads the verified tarball and manifest.
+4. The `publish` job waits for approval in the `npm` environment, then runs on a separate GitHub-hosted runner, as npm trusted publishing requires. It checks the manifest hashes, the package name and version inside the tarball, and that the version is not already on npm, then publishes that tarball. npm adds a provenance attestation only when the GitHub repository is public. A version containing `-` gets the `next` dist-tag; any other version gets `latest`.
+5. Confirm the version page on npmjs.com shows the new version (and the provenance badge once the repository is public), then run the post-release check above.

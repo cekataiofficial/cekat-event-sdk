@@ -1,0 +1,127 @@
+name: Release Node.js package
+
+# Publishes @cekatai/event-sdk to npm when a node/vX.Y.Z tag is pushed. This is the only workflow that
+# publishes. The build job verifies the package with scripts/package-readiness.sh, and the separate publish
+# job uploads exactly that tarball from a GitHub-hosted runner, which npm trusted publishing (OIDC)
+# requires. No npm token is stored: npm exchanges the job's OIDC token for a short-lived
+# publish credential. npm attaches provenance automatically only while the repository is public, so it is
+# not requested explicitly (an explicit request fails from a private repository). The publish job waits
+# for approval through the "npm" environment.
+on:
+  push:
+    tags:
+      - 'node/v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-node-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify the npm package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+      - name: Tag matches the package version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#node/v}"
+          declared="$(node -p 'require("./node/package.json").version')"
+          if [ "$version" != "$declared" ]; then
+            echo "::error::tag $TAG does not match node/package.json version $declared"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install Playwright browsers for the browser tests
+        working-directory: node
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Build and validate the package artifact
+        run: scripts/package-readiness.sh --language node --output "$RUNNER_TEMP/cekat-artifacts"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/cekat-artifacts/node
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to npm
+    needs: build
+    # Trusted publishing requires a GitHub-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            ci
+            scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Use npm 11.5.1 or newer
+        run: |
+          required=11.5.1
+          if [ "$(printf '%s\n' "$required" "$(npm --version)" | sort -V | head -n 1)" != "$required" ]; then
+            npm install --global npm@11
+          fi
+          npm --version
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/npm-package
+      - name: Verify the downloaded artifact
+        id: artifact
+        run: |
+          python3 scripts/validate-package-manifest.py "$RUNNER_TEMP/npm-package/manifest.json" --language node --version "$VERSION"
+          tarball="$(find "$RUNNER_TEMP/npm-package" -maxdepth 1 -name '*.tgz' -print)"
+          name="$(tar -xOzf "$tarball" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).name')"
+          packed="$(tar -xOzf "$tarball" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
+          if [ "$name" != "@cekatai/event-sdk" ] || [ "$packed" != "$VERSION" ]; then
+            echo "::error::tarball contains $name@$packed, expected @cekatai/event-sdk@$VERSION"
+            exit 1
+          fi
+          if npm view "@cekatai/event-sdk@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::@cekatai/event-sdk@$VERSION already exists on npm"
+            exit 1
+          fi
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+      - name: Publish through trusted publishing
+        env:
+          TARBALL: ${{ steps.artifact.outputs.tarball }}
+        run: |
+          case "$VERSION" in
+            *-*) dist_tag=next ;;
+            *) dist_tag=latest ;;
+          esac
+          npm publish "$TARBALL" --access public --tag "$dist_tag"
+          {
+            echo "### Published @cekatai/event-sdk@$VERSION"
+            echo ""
+            echo "dist-tag \`$dist_tag\`: https://www.npmjs.com/package/@cekatai/event-sdk/v/$VERSION"
+          } >> "$GITHUB_STEP_SUMMARY"

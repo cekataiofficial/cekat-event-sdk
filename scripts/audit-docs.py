@@ -73,7 +73,7 @@ FORBIDDEN = [
     (re.compile(r"\bonly (?:HTTP )?`?500`?\b", re.IGNORECASE), "stale retry claim (only HTTP 500)"),
 ]
 CEKAT_HOST = re.compile(r"\b([a-z0-9.-]*cekat\.ai)\b")
-ALLOWED_HOSTS = {"server.cekat.ai", "schemas.cekat.ai", "go.cekat.ai"}
+ALLOWED_HOSTS = {"server.cekat.ai", "schemas.cekat.ai", "golang.cekat.ai"}
 HEADER = re.compile(r"x-cekat-visitor-id", re.IGNORECASE)
 POSITIVE_CLAIMS = re.compile(
     r"\bdurabl[ey]\s+(?:stored|persisted|saved|storage|persistence|delivery)\b"

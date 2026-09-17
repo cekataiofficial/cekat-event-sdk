@@ -1,16 +1,20 @@
-# cekat-event-sdk
+# Cekat Event SDK
+
+![Cekat Event SDK](assets/cekat_event_sdk.jpeg)
 
 Backend SDKs that submit Cekat events and correlate them with the browser visitor. Implemented: [Go](go/README.md), [Node.js and Bun](node/README.md), [Python](python/README.md), [PHP](php/README.md), [Ruby](ruby/README.md), [Java](java/README.md), and [.NET](dotnet/README.md).
 
 ## How to use
 
-Every SDK works the same way:
+Every SDK works the same way::
 
 1. **Install** the package for your language.
 2. **Create one client** with your Cekat access token (server-side only; never ship it to a browser) and **send events**: a common event such as `user_login`, or a custom event with your own key.
 3. **Add the middleware** for your web framework.
 
-**Why the middleware?** The Cekat browser SDK remembers each anonymous visitor in the `_cekat_visitor_id` cookie (or sends it as the `X-Cekat-Visitor-ID` header to cross-origin APIs). The middleware reads that value on every request, so any event you send while handling the request carries the visitor ID automatically. When an event has both the visitor ID and an email or phone number, Cekat links the anonymous visitor to that contact. **Without middleware**, read the cookie yourself and pass it as the event's visitor ID, as each section below shows. Visitor IDs come from the browser and are untrusted: use them only for this correlation, never for authentication.
+**Why the middleware?** The Cekat browser SDK remembers each anonymous visitor in the `_cekat_visitor_id` cookie (or sends it as the `X-Cekat-Visitor-ID` header to cross-origin APIs). The middleware reads that value on every request, so any event you send while handling the request carries the visitor ID automatically. When an event has both the visitor ID and an email or phone number, Cekat links the anonymous visitor to that contact.
+
+**Without middleware**, read the cookie yourself and pass it as the event's visitor ID, as each section below shows. Visitor IDs come from the browser and are untrusted: use them only for this correlation, never for authentication.
 
 <details>
 <summary><strong>Go</strong></summary>
@@ -18,14 +22,14 @@ Every SDK works the same way:
 **Install**
 
 ```sh
-go get go.cekat.ai/event-sdk
-go get go.cekat.ai/event-sdk/middleware/gin   # only the adapter for your framework: gin, echo, fiber, or chi
+go get golang.cekat.ai/event-sdk
+go get golang.cekat.ai/event-sdk/middleware/gin   # only the adapter for your framework: gin, echo, fiber, or chi
 ```
 
 **Send events**
 
 ```go
-import cekat "go.cekat.ai/event-sdk"
+import cekat "golang.cekat.ai/event-sdk"
 
 client, err := cekat.New(os.Getenv("CEKAT_ACCESS_TOKEN"))
 
@@ -42,19 +46,19 @@ _, err = client.CustomEvent(r.Context(), "trial_started", cekat.Event{
 **Middleware** (pass the request's context to the client, as shown)
 
 ```go
-// net/http — import cekatnethttp "go.cekat.ai/event-sdk/middleware/nethttp"
+// net/http — import cekatnethttp "golang.cekat.ai/event-sdk/middleware/nethttp"
 mux.Handle("/login", cekatnethttp.Middleware(http.HandlerFunc(login)))       // client.UserLogin(r.Context(), ...)
 
-// Gin — import cekatgin "go.cekat.ai/event-sdk/middleware/gin"
+// Gin — import cekatgin "golang.cekat.ai/event-sdk/middleware/gin"
 router.Use(cekatgin.Middleware())                                             // client.UserLogin(c.Request.Context(), ...)
 
-// Echo — import cekatecho "go.cekat.ai/event-sdk/middleware/echo"
+// Echo — import cekatecho "golang.cekat.ai/event-sdk/middleware/echo"
 e.Use(cekatecho.Middleware())                                                 // client.UserLogin(c.Request().Context(), ...)
 
-// Fiber — import cekatfiber "go.cekat.ai/event-sdk/middleware/fiber"
+// Fiber — import cekatfiber "golang.cekat.ai/event-sdk/middleware/fiber"
 app.Use(cekatfiber.Middleware())                                              // client.UserLogin(c.Context(), ...)
 
-// Chi — import cekatchi "go.cekat.ai/event-sdk/middleware/chi"
+// Chi — import cekatchi "golang.cekat.ai/event-sdk/middleware/chi"
 r.Use(cekatchi.Middleware)                                                    // client.UserLogin(r.Context(), ...)
 ```
 
@@ -78,13 +82,13 @@ More: [go/README.md](go/README.md)
 **Install**
 
 ```sh
-npm install @cekat/event-sdk    # or: bun add @cekat/event-sdk
+npm install @cekatai/event-sdk    # or: bun add @cekatai/event-sdk
 ```
 
 **Send events**
 
 ```ts
-import { Client } from '@cekat/event-sdk';
+import { Client } from '@cekatai/event-sdk';
 
 const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
 
@@ -99,33 +103,33 @@ await cekat.customEvent('trial_started', { email: 'ada@example.com', properties:
 
 ```ts
 // Express
-import { visitorMiddleware } from '@cekat/event-sdk/express';
+import { visitorMiddleware } from '@cekatai/event-sdk/express';
 app.use(visitorMiddleware());
 
 // Fastify
-import { visitorPlugin } from '@cekat/event-sdk/fastify';
+import { visitorPlugin } from '@cekatai/event-sdk/fastify';
 await app.register(visitorPlugin);
 
 // Koa
-import { visitorMiddleware as cekatVisitor } from '@cekat/event-sdk/koa';
+import { visitorMiddleware as cekatVisitor } from '@cekatai/event-sdk/koa';
 app.use(cekatVisitor());
 
 // NestJS (in your module's configure(consumer))
-import { CekatVisitorMiddleware } from '@cekat/event-sdk/nestjs';
+import { CekatVisitorMiddleware } from '@cekatai/event-sdk/nestjs';
 consumer.apply(CekatVisitorMiddleware).forRoutes('*');
 
 // Next.js, Node runtime only. Pages Router, pages/api/login.ts:
-import { withCekatVisitor } from '@cekat/event-sdk/nextjs';
+import { withCekatVisitor } from '@cekatai/event-sdk/nextjs';
 export default withCekatVisitor(async (req, res) => { await cekat.userLogin({ email: req.body.email }); res.end(); });
 
 // Next.js App Router, app/api/login/route.ts (also add: export const runtime = 'nodejs'):
-import { runWithCekatVisitor } from '@cekat/event-sdk/nextjs';
+import { runWithCekatVisitor } from '@cekatai/event-sdk/nextjs';
 export async function POST(request: Request) {
   return runWithCekatVisitor(request, async () => { await cekat.userLogin({ email: 'ada@example.com' }); return new Response('ok'); });
 }
 
 // Bun.serve, Hono, Elysia
-import { withCekatVisitor as withVisitor, runWithCekatVisitor as runWithVisitor } from '@cekat/event-sdk/fetch';
+import { withCekatVisitor as withVisitor, runWithCekatVisitor as runWithVisitor } from '@cekatai/event-sdk/fetch';
 Bun.serve({ fetch: withVisitor(app.fetch) });              // wraps any fetch handler, including Hono and Elysia apps
 honoApp.use((c, next) => runWithVisitor(c.req.raw, next)); // or as Hono middleware
 ```
@@ -440,7 +444,7 @@ With `--as-of`, it also fails when a supported line has reached end of support o
 
 ## Release readiness
 
-Nothing in this repository publishes packages. Before a release, run the **Release readiness** workflow (`.github/workflows/release-readiness.yml`, manual trigger only). It builds every SDK with its own `scripts/package` on the current toolchain, validates each `manifest.json` and the complete seven-language set, and keeps the artifacts as workflow artifacts for 14 days, with a summary table of file names, sizes, and SHA-256 hashes. Registry setup, signing, tags, and publication remain manual release-owner steps; the workflow lists them without performing them.
+Before a release, run the **Release readiness** workflow (`.github/workflows/release-readiness.yml`, manual trigger only). It builds every SDK with its own `scripts/package` on the current toolchain, validates each `manifest.json` and the complete seven-language set, and keeps the artifacts as workflow artifacts for 14 days, with a summary table of file names, sizes, and SHA-256 hashes. Registry setup, signing, tags, and publication remain release-owner steps; the workflow lists them without performing them. The one exception is npm: pushing a `node/vX.Y.Z` tag starts `.github/workflows/release-node.yml`, which rebuilds and verifies the Node.js package and, after approval in the `npm` environment, publishes it through npm trusted publishing (see the [release checklist](docs/release-checklist.md#4-npm-release)).
 
 Locally (each language's toolchain must be installed):
 

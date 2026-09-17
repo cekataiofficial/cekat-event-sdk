@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	cekat "go.cekat.ai/event-sdk"
-	"go.cekat.ai/event-sdk/internal/retryobserver"
+	cekat "golang.cekat.ai/event-sdk"
+	"golang.cekat.ai/event-sdk/internal/retryobserver"
 )
 
 func TestSharedConformance(t *testing.T) {

@@ -16,7 +16,7 @@ concurrency:
 jobs:
   contract:
     name: Conformance contract and mock server
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
@@ -45,7 +45,7 @@ jobs:
 
   go:
     name: Go ${{ matrix.profile }} (${{ matrix.go-version }})
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -99,7 +99,7 @@ jobs:
 
   node:
     name: Node.js ${{ matrix.profile }} (${{ matrix.node-version }})
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -146,7 +146,7 @@ jobs:
 
   bun:
     name: Bun ${{ matrix.bun-version }} (Node SDK)
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -186,7 +186,7 @@ jobs:
 
   python:
     name: Python ${{ matrix.python-version }} (${{ matrix.dependencies }})
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -233,7 +233,7 @@ jobs:
 
   dotnet:
     name: .NET ${{ matrix.sdk }} (${{ matrix.test-framework }})
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -258,9 +258,6 @@ jobs:
       - *build-mock-setup
       - *build-mock
       - uses: actions/setup-dotnet@v6
-        env:
-          # The default /usr/share/dotnet is not writable by the self-hosted runner user.
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: ${{ matrix.sdk }}.x
       - name: Select the ${{ matrix.sdk }} SDK
@@ -282,7 +279,7 @@ jobs:
 
   php:
     name: PHP ${{ matrix.php-version }} (${{ matrix.dependencies }})
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -295,9 +292,6 @@ jobs:
           # Declared floors not reachable while Laravel is installed: Symfony 6.4 and lowest PSR packages.
           - php-version: '8.2'
             dependencies: symfony-6.4-floor
-    env:
-      # The self-hosted runner's route to packagist.org can stall; avoid IPv6 and retry network calls.
-      COMPOSER_IPRESOLVE: '4'
     defaults:
       run:
         working-directory: php
@@ -315,6 +309,7 @@ jobs:
           tools: composer:v2
       - name: Resolve dependencies
         run: |
+          # Retry transient packagist.org network failures.
           retry() {
             for attempt in 1 2 3; do
               "$@" && return 0
@@ -361,7 +356,7 @@ jobs:
 
   ruby:
     name: Ruby ${{ matrix.ruby-version }} (Rails ${{ matrix.rails }}, Rack ${{ matrix.rack }})
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -393,13 +388,6 @@ jobs:
           persist-credentials: false
       - *build-mock-setup
       - *build-mock
-      # Prebuilt Rubies only run from /opt/hostedtoolcache, which the self-hosted runner user cannot create.
-      - name: Make the Ruby tool cache writable
-        run: |
-          if [ ! -w /opt/hostedtoolcache ]; then
-            sudo -n mkdir -p /opt/hostedtoolcache
-            sudo -n chown "$(id -u):$(id -g)" /opt/hostedtoolcache
-          fi
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby-version }}
@@ -420,7 +408,7 @@ jobs:
 
   java:
     name: Java ${{ matrix.java-version }} (Spring Boot ${{ matrix.spring-boot }})
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -456,7 +444,7 @@ jobs:
     name: CI required
     if: always()
     needs: [contract, go, node, bun, python, php, ruby, java, dotnet]
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed
         env:

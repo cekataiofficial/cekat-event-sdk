@@ -1,14 +1,14 @@
-# `@cekat/event-sdk`
+# `@cekatai/event-sdk`
 
 The server SDK for Node.js and Bun sends Cekat events through a backend-only access token. Browser exports deliberately contain **no token client**, `Authorization` handling, or Node imports.
 
 ## Install and initialize (Node.js and Bun)
 
 ```sh
-npm install @cekat/event-sdk    # or: bun add @cekat/event-sdk
+npm install @cekatai/event-sdk    # or: bun add @cekatai/event-sdk
 ```
 
-Requires Node.js 22.12 or newer, or Bun 1.2.5 or newer. The same package runs on both; see [Bun](#bun). The package is ESM and also loads from CommonJS through `require()` (for example in default NestJS projects). The Node client is exported from both `@cekat/event-sdk` and `@cekat/event-sdk/node`.
+Requires Node.js 22.12 or newer, or Bun 1.2.5 or newer. The same package runs on both; see [Bun](#bun). The package is ESM and also loads from CommonJS through `require()` (for example in default NestJS projects). The Node client is exported from both `@cekatai/event-sdk` and `@cekatai/event-sdk/node`.
 
 | Framework adapter | Supported majors |
 | --- | --- |
@@ -17,10 +17,10 @@ Requires Node.js 22.12 or newer, or Bun 1.2.5 or newer. The same package runs on
 | Koa | 2.13+, 3 |
 | NestJS (Express or Fastify platform) | 10, 11, 12 |
 | Next.js (Node runtime) | 14, 15, 16 |
-| Fetch-style handlers: `Bun.serve`, Hono, Elysia (`@cekat/event-sdk/fetch`) | Any |
+| Fetch-style handlers: `Bun.serve`, Hono, Elysia (`@cekatai/event-sdk/fetch`) | Any |
 
 ```ts
-import { Client } from '@cekat/event-sdk';
+import { Client } from '@cekatai/event-sdk';
 
 // Keep the token in server-side configuration; never ship it to a browser.
 const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
@@ -63,7 +63,7 @@ A successful `Acknowledgement` means the ingest service accepted the event for *
 `X-Cekat-Visitor-ID` wins over the `_cekat_visitor_id` cookie. Values are trimmed; blank values are absent. Visitor IDs are untrusted correlation data from the browser: never use them for authentication or authorization. For non-framework code, establish a request-local scope explicitly:
 
 ```ts
-import { runWithVisitorId } from '@cekat/event-sdk/node';
+import { runWithVisitorId } from '@cekatai/event-sdk/node';
 
 await runWithVisitorId('visitor-123', () => cekat.customEvent('page_server_rendered', { email: 'person@example.test' }));
 ```
@@ -73,21 +73,21 @@ Use one adapter at the server boundary. Context is request-local, including asyn
 ```ts
 // Express
 import express from 'express';
-import { visitorMiddleware } from '@cekat/event-sdk/express';
+import { visitorMiddleware } from '@cekatai/event-sdk/express';
 express().use(visitorMiddleware());
 
 // Fastify
 import Fastify from 'fastify';
-import { visitorPlugin } from '@cekat/event-sdk/fastify';
+import { visitorPlugin } from '@cekatai/event-sdk/fastify';
 await Fastify().register(visitorPlugin);
 
 // Koa
 import Koa from 'koa';
-import { visitorMiddleware as koaVisitorMiddleware } from '@cekat/event-sdk/koa';
+import { visitorMiddleware as koaVisitorMiddleware } from '@cekatai/event-sdk/koa';
 new Koa().use(koaVisitorMiddleware());
 
 // NestJS
-import { CekatVisitorMiddleware } from '@cekat/event-sdk/nestjs';
+import { CekatVisitorMiddleware } from '@cekatai/event-sdk/nestjs';
 // consumer.apply(CekatVisitorMiddleware).forRoutes('*');
 ```
 
@@ -96,7 +96,7 @@ Next.js support is **Node runtime only**. Declare the runtime in a route before 
 ```ts
 export const runtime = 'nodejs';
 
-import { withCekatVisitor } from '@cekat/event-sdk/nextjs';
+import { withCekatVisitor } from '@cekatai/event-sdk/nextjs';
 export default withCekatVisitor(async (request, response) => { /* ... */ });
 ```
 
@@ -104,11 +104,11 @@ For App Router handlers use `runWithCekatVisitor(request, () => handler())` in t
 
 ## Bun
 
-On Bun 1.2.5 or newer the client, the visitor scope, and the Express, Fastify, Koa, and NestJS adapters run unchanged; their test suites pass with Bun as the runtime. The Next.js helpers' tests also pass on Bun, but whether Next.js itself runs on Bun is up to Next.js. No separate import or build is needed. Bun-native servers pass a Web `Request` to a `fetch` handler, so use `@cekat/event-sdk/fetch`:
+On Bun 1.2.5 or newer the client, the visitor scope, and the Express, Fastify, Koa, and NestJS adapters run unchanged; their test suites pass with Bun as the runtime. The Next.js helpers' tests also pass on Bun, but whether Next.js itself runs on Bun is up to Next.js. No separate import or build is needed. Bun-native servers pass a Web `Request` to a `fetch` handler, so use `@cekatai/event-sdk/fetch`:
 
 ```ts
-import { Client } from '@cekat/event-sdk';
-import { withCekatVisitor } from '@cekat/event-sdk/fetch';
+import { Client } from '@cekatai/event-sdk';
+import { withCekatVisitor } from '@cekatai/event-sdk/fetch';
 
 const cekat = new Client(Bun.env.CEKAT_ACCESS_TOKEN!);
 
@@ -128,7 +128,7 @@ Hono and Elysia expose a standard `fetch`, so wrap it, or use Hono middleware:
 
 ```ts
 import { Hono } from 'hono';
-import { runWithCekatVisitor, withCekatVisitor } from '@cekat/event-sdk/fetch';
+import { runWithCekatVisitor, withCekatVisitor } from '@cekatai/event-sdk/fetch';
 
 const hono = new Hono();
 hono.use((c, next) => runWithCekatVisitor(c.req.raw, next));
@@ -138,7 +138,7 @@ export default { fetch: hono.fetch };
 Bun.serve({ fetch: withCekatVisitor(elysiaApp.fetch) });
 ```
 
-`@cekat/event-sdk/fetch` needs only a Web `Request` and `AsyncLocalStorage`, so it also works with Hono on Node.js. The scope covers the handler and everything it awaits or starts. A streaming response body that is generated after the handler returns may not observe it: read `currentVisitorId()` in the handler and pass the value along.
+`@cekatai/event-sdk/fetch` needs only a Web `Request` and `AsyncLocalStorage`, so it also works with Hono on Node.js. The scope covers the handler and everything it awaits or starts. A streaming response body that is generated after the handler returns may not observe it: read `currentVisitorId()` in the handler and pass the value along.
 
 On Bun, `AsyncLocalStorage` is not restored inside `AbortSignal.timeout()` listeners or `MessagePort` message handlers (it is on Node.js). Calls made from those callbacks send no visitor unless you capture it first and pass it explicitly: `const visitorId = currentVisitorId();` then `cekat.userLogin({ email, visitorId })`. Every other asynchronous boundary the test suite covers behaves as on Node.js.
 
@@ -164,7 +164,7 @@ Browser helpers read the exact `_cekat_visitor_id` cookie; they are SSR-safe and
 Use explicit enrichment as the default escape hatch:
 
 ```ts
-import { withVisitor, withVisitorRequest } from '@cekat/event-sdk/browser';
+import { withVisitor, withVisitorRequest } from '@cekatai/event-sdk/browser';
 
 await fetch('https://api.example.test/events', withVisitor({ method: 'POST' }));
 await fetch(withVisitorRequest(new Request('https://api.example.test/events')));
@@ -176,7 +176,7 @@ Axios is optional and should be attached only to a dedicated instance, not a pro
 
 ```ts
 import axios from 'axios';
-import { createAxiosVisitorInterceptor } from '@cekat/event-sdk/browser/axios';
+import { createAxiosVisitorInterceptor } from '@cekatai/event-sdk/browser/axios';
 
 const api = axios.create({ baseURL: 'https://api.example.test' });
 api.interceptors.request.use(createAxiosVisitorInterceptor());
@@ -185,7 +185,7 @@ api.interceptors.request.use(createAxiosVisitorInterceptor());
 Automatic propagation is disabled by default. Enable it only with parsed, explicit HTTP(S) origin/path allowlist entries. Matching requires exact normalized `URL.origin` equality and `URL.pathname.startsWith(pathPrefix)`; it is not a raw URL-prefix match. One active installation is allowed and `disable()` restores the original globals.
 
 ```ts
-import { enableAutoPropagation } from '@cekat/event-sdk/browser';
+import { enableAutoPropagation } from '@cekatai/event-sdk/browser';
 
 const disable = enableAutoPropagation({
   allowedTargets: [{ origin: 'https://api.example.test', pathPrefix: '/v1/' }],
@@ -204,4 +204,4 @@ The automatic interceptor covers browser global `fetch` and `XMLHttpRequest` onl
 
 Bun support is verified separately with `npm run test:bun` (the test suites on Bun, including the Bun-only `test/bun` servers) and `CEKAT_NODE_RUNTIME=bun scripts/conformance` (the shared conformance fixtures on Bun). Both use Node.js and npm for installation and type checking.
 
-The command runs dependency installation, official compatibility verification, production and full dependency audits, the approved-range dependency gate, tests, type checks, builds, export checks, and browser tests; it then creates one local `.tgz` plus an atomic SHA-256 `manifest.json`. It never publishes, signs, tags, or pushes.
+The command runs dependency installation, official compatibility verification, production and full dependency audits, the approved-range dependency gate, tests, type checks, builds, export checks, and browser tests; it then creates one local `.tgz` plus an atomic SHA-256 `manifest.json`. It never publishes, signs, tags, or pushes. Releases to npm run from the repository's `release-node.yml` workflow when a `node/vX.Y.Z` tag is pushed; see the root release checklist.

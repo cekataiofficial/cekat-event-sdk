@@ -3,7 +3,7 @@ package echo
 
 import (
 	"github.com/labstack/echo/v4"
-	cekat "go.cekat.ai/event-sdk"
+	cekat "golang.cekat.ai/event-sdk"
 )
 
 // Middleware adds a request-local visitor ID, when supplied by the request, to

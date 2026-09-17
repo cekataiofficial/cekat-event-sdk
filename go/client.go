@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"go.cekat.ai/event-sdk/internal/retryobserver"
+	"golang.cekat.ai/event-sdk/internal/retryobserver"
 )
 
 const ingestPath = "/api/events/ingest"

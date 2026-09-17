@@ -19,7 +19,7 @@ import (
 
 const (
 	packageVersion = "0.1.0"
-	modulePath     = "go.cekat.ai/event-sdk"
+	modulePath     = "golang.cekat.ai/event-sdk"
 )
 
 type packageManifest struct {

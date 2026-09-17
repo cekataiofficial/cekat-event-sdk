@@ -35,7 +35,7 @@ CI: `go` job `go-version`: 1.22.12, stable. Release readiness installs `go-versi
 | Koa | 2.13+, 3 | 3.2.1, 2.16.4 |
 | NestJS | 10, 11, 12 | 12.0.1, 10.4.22 |
 | Next.js | 14, 15, 16 (Node runtime) | 16.3.5 |
-| Bun.serve, Hono, Elysia | fetch-style handlers via @cekat/event-sdk/fetch | 1.2.5, 1.3.14, 1.4.2 |
+| Bun.serve, Hono, Elysia | fetch-style handlers via @cekatai/event-sdk/fetch | 1.2.5, 1.3.14, 1.4.2 |
 
 CI: `node` job `node-version`: 22.12.0, 24; `bun` job `bun-version`: 1.2.5, 1.3.14, 1.4.2. Release readiness installs `node-version` 24.
 

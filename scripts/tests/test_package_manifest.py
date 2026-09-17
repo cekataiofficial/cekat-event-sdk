@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "scripts" / "validate-package-manifest.py"
 WRAPPER = ROOT / "scripts" / "package-readiness.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "release-readiness.yml"
+NODE_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-node.yml"
 SCHEMA = ROOT / "ci" / "package-manifest.schema.json"
 LANGUAGES = ("go", "node", "python", "php", "java", "dotnet", "ruby")
 
@@ -423,9 +424,54 @@ class NoPublishTest(unittest.TestCase):
         self.assertIn("validate-compatibility-matrix.py --as-of", text)
 
     def test_root_release_scripts_never_publish(self) -> None:
-        for path in (WRAPPER, VALIDATOR, ROOT / "scripts" / "conformance.py", ROOT / "scripts" / "validate-compatibility-matrix.py", ROOT / ".github" / "workflows" / "ci.yml"):
+        for path in (WRAPPER, VALIDATOR, ROOT / "scripts" / "conformance.py", ROOT / "scripts" / "validate-compatibility-matrix.py"):
             with self.subTest(path=path.name):
                 self.assertIsNone(self.FORBIDDEN.search(path.read_text(encoding="utf-8")))
+
+    def test_only_the_node_release_workflow_publishes(self) -> None:
+        workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
+        self.assertIn(NODE_RELEASE_WORKFLOW, workflows)
+        for path in workflows:
+            if path == NODE_RELEASE_WORKFLOW:
+                continue
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIsNone(self.FORBIDDEN.search(text))
+                self.assertNotRegex(text, r"(?m)^\s+id-token:\s*write")
+
+
+class NodeReleaseWorkflowTest(unittest.TestCase):
+    """The npm release publishes one verified tarball through trusted publishing, and nothing else."""
+
+    def setUp(self) -> None:
+        self.text = NODE_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        publish = re.search(r"(?ms)^  publish:\n(.*)", self.text)
+        self.assertIsNotNone(publish)
+        self.publish = publish.group(1)
+        self.build = self.text[: publish.start()]
+
+    def test_triggers_only_on_node_version_tags(self) -> None:
+        trigger = re.search(r"^on:\n((?:[ #].*\n|\n)*?)^\S", self.text, re.MULTILINE)
+        self.assertIsNotNone(trigger)
+        lines = [line.strip() for line in trigger.group(1).splitlines() if line.strip() and not line.strip().startswith("#")]
+        self.assertEqual(lines, ["push:", "tags:", "- 'node/v*'"])
+
+    def test_uses_trusted_publishing_without_stored_credentials(self) -> None:
+        self.assertRegex(self.text, r"(?m)^permissions:\n  contents: read\n")
+        self.assertNotIn("secrets.", self.text)
+        self.assertNotRegex(self.text, r"NPM_TOKEN|NODE_AUTH_TOKEN|_authToken")
+        self.assertEqual(len(re.findall(r"id-token:\s*write", self.text)), 1)
+        self.assertRegex(self.publish, r"(?m)^      id-token: write$")
+        self.assertRegex(self.publish, r"(?m)^    runs-on: ubuntu-latest$")
+        self.assertRegex(self.publish, r"(?m)^    environment: npm$")
+
+    def test_publishes_only_the_verified_artifact_once(self) -> None:
+        self.assertEqual(len(re.findall(r"npm publish", self.text)), 1)
+        self.assertNotRegex(self.build, r"npm publish|id-token")
+        self.assertIn("scripts/package-readiness.sh --language node", self.build)
+        self.assertIn("validate-package-manifest.py", self.publish)
+        self.assertIn('npm publish "$TARBALL" --access public --tag', self.publish)
+        self.assertIsNone(re.search(r"gem push|nuget push|twine upload|cosign|gpg\s|gh release|git tag|git push", self.text, re.IGNORECASE))
 
 
 if __name__ == "__main__":

@@ -76,7 +76,7 @@ class AuditTest(unittest.TestCase):
     def test_missing_documents_and_root_links(self) -> None:
         (self.root / "docs" / "visitor-propagation.md").unlink()
         self.assertReported("docs/visitor-propagation.md:1: required document is missing")
-        self.replace("README.md", "](docs/release-checklist.md)", "](docs/RELEASE.md)")
+        self.replace("README.md", "](docs/release-checklist.md", "](docs/RELEASE.md")
         self.assertReported("README.md:1: does not link docs/release-checklist.md")
 
     def test_links(self) -> None:
