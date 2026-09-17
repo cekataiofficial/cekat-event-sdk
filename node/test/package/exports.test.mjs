@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import packageManifest from '../../package.json' with { type: 'json' };
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const expectedSpecifiers = Object.keys(packageManifest.exports).map((subpath) => subpath === '.' ? '@cekat/event-sdk' : `@cekat/event-sdk/${subpath.replace(/^\.\//, '')}`);
+const expectedSpecifiers = Object.keys(packageManifest.exports).map((subpath) => subpath === '.' ? '@cekatai/event-sdk' : `@cekatai/event-sdk/${subpath.replace(/^\.\//, '')}`);
 
 function filesUnder(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -28,11 +28,11 @@ test('published exports resolve in a clean packed consumer and browser artifacts
     writeFileSync(join(output, 'consumer.mjs'), expectedSpecifiers.map((specifier) => `await import('${specifier}');`).join('\n'));
     execFileSync(process.execPath, ['consumer.mjs'], { cwd: output, stdio: 'inherit' });
     // CommonJS applications (for example default NestJS projects) load the ESM package through require(esm).
-    writeFileSync(join(output, 'consumer.cjs'), "const { Client } = require('@cekat/event-sdk');\nconst { visitorMiddleware } = require('@cekat/event-sdk/express');\nif (typeof Client !== 'function' || typeof visitorMiddleware !== 'function') throw new Error('require(esm) failed');\n");
+    writeFileSync(join(output, 'consumer.cjs'), "const { Client } = require('@cekatai/event-sdk');\nconst { visitorMiddleware } = require('@cekatai/event-sdk/express');\nif (typeof Client !== 'function' || typeof visitorMiddleware !== 'function') throw new Error('require(esm) failed');\n");
     execFileSync(process.execPath, ['consumer.cjs'], { cwd: output, stdio: 'inherit' });
-    writeFileSync(join(output, 'consumer.ts'), "import { Client } from '@cekat/event-sdk';\nimport { Client as NodeClient } from '@cekat/event-sdk/node';\nvoid NodeClient;\nimport { withVisitor } from '@cekat/event-sdk/browser';\nimport { createAxiosVisitorInterceptor } from '@cekat/event-sdk/browser/axios';\nconst client: Client = new Client('consumer-token');\nvoid client;\nvoid withVisitor;\nvoid createAxiosVisitorInterceptor;\n");
+    writeFileSync(join(output, 'consumer.ts'), "import { Client } from '@cekatai/event-sdk';\nimport { Client as NodeClient } from '@cekatai/event-sdk/node';\nvoid NodeClient;\nimport { withVisitor } from '@cekatai/event-sdk/browser';\nimport { createAxiosVisitorInterceptor } from '@cekatai/event-sdk/browser/axios';\nconst client: Client = new Client('consumer-token');\nvoid client;\nvoid withVisitor;\nvoid createAxiosVisitorInterceptor;\n");
     execFileSync('npx', ['tsc', '--noEmit', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', '--skipLibCheck', 'consumer.ts'], { cwd: output, stdio: 'inherit' });
-    for (const file of filesUnder(join(output, 'node_modules/@cekat/event-sdk/dist/browser'))) {
+    for (const file of filesUnder(join(output, 'node_modules/@cekatai/event-sdk/dist/browser'))) {
       const source = readFileSync(file, 'utf8');
       expect(source).not.toMatch(/node:|async_hooks|\bClient\b|Authorization/);
     }

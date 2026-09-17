@@ -1,15 +1,19 @@
 # Go SDK Compatibility
 
+## Module path update (2026-09-15 UTC)
+
+The module path is the vanity import path `golang.cekat.ai/event-sdk` (adapters under `golang.cekat.ai/event-sdk/middleware/*`). Every module path needs its own `go-import` meta tag whose subdirectory field names that module's directory: `https://golang.cekat.ai/event-sdk?go-get=1` (and any path below it that is not an adapter) must serve `<meta name="go-import" content="golang.cekat.ai/event-sdk git https://github.com/cekataiofficial/cekat-event-sdk go">`, and `https://golang.cekat.ai/event-sdk/middleware/gin?go-get=1` (and paths below it) must serve `<meta name="go-import" content="golang.cekat.ai/event-sdk/middleware/gin git https://github.com/cekataiofficial/cekat-event-sdk go/middleware/gin">`, and likewise for `chi`, `echo`, and `fiber`. Each page must serve exactly one matching tag. With that layout, tags are `go/vX.Y.Z` for the core and `go/middleware/<name>/vX.Y.Z` for an adapter. A single root tag is not enough: the Go command then resolves `golang.cekat.ai/event-sdk/middleware/gin` relative to the root's subdirectory and looks for tags such as `middleware/gin/go/v0.1.0`. Both layouts were checked on 2026-09-15 against a local vanity server and Git repository with Go 1.27.1 and `GOPROXY=direct`. The subdirectory field of `go-import` is understood by Go 1.25 and newer; consumers on older toolchains receive the modules through the default module proxy (`proxy.golang.org`), which resolves the path itself. Consumers who bypass the proxy (`GOPROXY=direct`, or a `GOPRIVATE`/`GONOPROXY` pattern covering `golang.cekat.ai`) need Go 1.25 or newer; Go 1.22.12 in direct mode rejects the four-field tag with `no go-import meta tags`. The `github.com/cekataiofficial/cekat-event-sdk-go` coordinate checks recorded below predate this change.
+
 ## Module layout update (2026-09-13 UTC)
 
 The SDK is split into independently versioned modules so that importing the core never adds framework dependencies to a consumer's module graph or raises their Go floor.
 
-Go module: github.com/cekataiofficial/cekat-event-sdk-go
+Go module: golang.cekat.ai/event-sdk
 Selected minimum Go: 1.22
 
 | Module | `go` directive | Tested framework version |
 | --- | --- | --- |
-| `github.com/cekataiofficial/cekat-event-sdk-go` (core and `middleware/nethttp`) | 1.22 | none; standard library only |
+| `golang.cekat.ai/event-sdk` (core and `middleware/nethttp`) | 1.22 | none; standard library only |
 | `.../middleware/chi` | 1.23 (from Chi v5.3.2) | Chi v5.3.2 |
 | `.../middleware/gin` | 1.25.0 (from Gin v1.12.0) | Gin v1.12.0 |
 | `.../middleware/echo` | 1.25.0 (from Echo v4.15.4) | Echo v4.15.4 |
@@ -18,7 +22,7 @@ Selected minimum Go: 1.22
 
 Go 1.22 is the core floor because the core uses `math/rand/v2` and Go 1.22 loop-variable semantics. The core package, `middleware/nethttp`, and `internal/retryobserver` tests were executed with the Go 1.22.12 toolchain (`GOTOOLCHAIN=go1.22.12 go test -ldflags=-linkmode=external`; external linking is only required because macOS 26 rejects binaries produced by the Go 1.22 internal linker) and with Go 1.26.5. `go vet` reports no use of standard-library APIs newer than each module's `go` directive.
 
-Adapter modules keep the framework versions below as their minimum requirements. Each adapter's `go.mod` contains `replace github.com/cekataiofficial/cekat-event-sdk-go => ../..` for local development; `replace` directives are ignored when the module is consumed as a dependency. Nested modules are released with directory-prefixed tags such as `middleware/gin/v0.1.0`, and each adapter's core requirement must name a published core version at release time.
+Adapter modules keep the framework versions below as their minimum requirements. Each adapter's `go.mod` contains `replace golang.cekat.ai/event-sdk => ../..` for local development; `replace` directives are ignored when the module is consumed as a dependency. Nested modules are released with directory-prefixed tags such as `go/middleware/gin/v0.1.0`, and each adapter's core requirement must name a published core version at release time.
 
 The sections below record the original single-module evidence from 2026-09-10 and are retained for history.
 
@@ -58,7 +62,7 @@ $ GOWORK=off go list -m -json github.com/gin-gonic/gin@latest
 	"Version": "v1.12.0",
 	"Query": "latest",
 	"Time": "2026-02-28T10:10:09Z",
-	"GoMod": "/Users/gusaul/go/pkg/mod/cache/download/github.com/gin-gonic/gin/@v/v1.12.0.mod",
+	"GoMod": "$GOMODCACHE/cache/download/github.com/gin-gonic/gin/@v/v1.12.0.mod",
 	"GoVersion": "1.25.0"
 }
 
@@ -68,7 +72,7 @@ $ GOWORK=off go list -m -json github.com/labstack/echo/v4@latest
 	"Version": "v4.15.4",
 	"Query": "latest",
 	"Time": "2026-06-15T18:23:04Z",
-	"GoMod": "/Users/gusaul/go/pkg/mod/cache/download/github.com/labstack/echo/v4/@v/v4.15.4.mod",
+	"GoMod": "$GOMODCACHE/cache/download/github.com/labstack/echo/v4/@v/v4.15.4.mod",
 	"GoVersion": "1.25.0"
 }
 
@@ -78,7 +82,7 @@ $ GOWORK=off go list -m -json github.com/gofiber/fiber/v3@latest
 	"Version": "v3.5.0",
 	"Query": "latest",
 	"Time": "2026-08-12T15:09:15Z",
-	"GoMod": "/Users/gusaul/go/pkg/mod/cache/download/github.com/gofiber/fiber/v3/@v/v3.5.0.mod",
+	"GoMod": "$GOMODCACHE/cache/download/github.com/gofiber/fiber/v3/@v/v3.5.0.mod",
 	"GoVersion": "1.25.0"
 }
 
@@ -88,7 +92,7 @@ $ GOWORK=off go list -m -json github.com/go-chi/chi/v5@latest
 	"Version": "v5.3.2",
 	"Query": "latest",
 	"Time": "2026-08-20T09:37:52Z",
-	"GoMod": "/Users/gusaul/go/pkg/mod/cache/download/github.com/go-chi/chi/v5/@v/v5.3.2.mod",
+	"GoMod": "$GOMODCACHE/cache/download/github.com/go-chi/chi/v5/@v/v5.3.2.mod",
 	"GoVersion": "1.23"
 }
 ```

@@ -1,10 +1,10 @@
-module github.com/cekataiofficial/cekat-event-sdk-go/middleware/echo
+module golang.cekat.ai/event-sdk/middleware/echo
 
 go 1.25.0
 
 require (
-	github.com/cekataiofficial/cekat-event-sdk-go v0.1.0
 	github.com/labstack/echo/v4 v4.15.4
+	golang.cekat.ai/event-sdk v0.1.0
 )
 
 require (
@@ -19,4 +19,4 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 )
 
-replace github.com/cekataiofficial/cekat-event-sdk-go => ../..
+replace golang.cekat.ai/event-sdk => ../..

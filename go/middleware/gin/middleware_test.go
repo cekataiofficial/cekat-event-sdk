@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	cekat "github.com/cekataiofficial/cekat-event-sdk-go"
 	"github.com/gin-gonic/gin"
+	cekat "golang.cekat.ai/event-sdk"
 )
 
 func TestMiddlewareEnrichesGinRequestAndPreservesRequestAndResponse(t *testing.T) {

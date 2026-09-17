@@ -1,9 +1,21 @@
 {
-  "name": "@cekat/event-sdk",
+  "name": "@cekatai/event-sdk",
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cekataiofficial/cekat-event-sdk.git",
+    "directory": "node"
+  },
+  "homepage": "https://github.com/cekataiofficial/cekat-event-sdk/tree/main/node#readme",
+  "bugs": {
+    "url": "https://github.com/cekataiofficial/cekat-event-sdk/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "README.md",

@@ -4,11 +4,11 @@
 
 > **Node amendment (2026-09-13):** engines `>=22.12.0`, root `.` export plus `default` export conditions for `require(esm)`, widened optional peers (Express 4–5, Fastify 4–5, Koa 2–3, NestJS 10–12, Next 14–16), no `fastify-plugin` peer, and the package is no longer `private`.
 
-> **Implementation notes — Bun runtime (2026-09-14), overriding the tasks below.** The same `@cekat/event-sdk` package supports Bun (`engines.bun >=1.2.5`); there is no separate Bun build. The User-Agent runtime token comes from `src/node/runtime.ts` (`bun/<version>` when `process.versions.bun` is set, because Bun also reports a Node version). A runtime-agnostic `@cekat/event-sdk/fetch` export (`withCekatVisitor`, `runWithCekatVisitor`) wraps Web `Request` handlers for `Bun.serve` (including `routes`), Hono, and Elysia. `npm run test:bun` runs Vitest with Bun workers plus the Bun-only `test/bun` suite; `CEKAT_NODE_RUNTIME=bun scripts/conformance` runs the shared fixtures on Bun and asserts the exact runtime token. Bun before 1.4.0 has HTTP-client defects: pooled connections left broken by a server-closed response (merged bodies, silent re-sends, extra requests), mitigated by `keepalive: false` on those releases; and `fetch()` rejecting when the connection closes after headers but before the body, which cannot be mitigated, so a truncated 200 is treated as a retried transport failure. `conformance/README.md` records that as a runtime limitation and the Node runner accepts the fallback only for `success-body-interrupted` on Bun before 1.4, labelling the record `runtime_deviation`. Vitest 5 needs Bun 1.2.5+ (`util.parseEnv`). On Bun, AsyncLocalStorage is not restored in `AbortSignal.timeout()` listeners or `MessagePort` messages; the propagation test pins this. CI adds a `bun` job for 1.2.5, 1.3.14, and 1.4.2.
+> **Implementation notes — Bun runtime (2026-09-14), overriding the tasks below.** The same `@cekatai/event-sdk` package supports Bun (`engines.bun >=1.2.5`); there is no separate Bun build. The User-Agent runtime token comes from `src/node/runtime.ts` (`bun/<version>` when `process.versions.bun` is set, because Bun also reports a Node version). A runtime-agnostic `@cekatai/event-sdk/fetch` export (`withCekatVisitor`, `runWithCekatVisitor`) wraps Web `Request` handlers for `Bun.serve` (including `routes`), Hono, and Elysia. `npm run test:bun` runs Vitest with Bun workers plus the Bun-only `test/bun` suite; `CEKAT_NODE_RUNTIME=bun scripts/conformance` runs the shared fixtures on Bun and asserts the exact runtime token. Bun before 1.4.0 has HTTP-client defects: pooled connections left broken by a server-closed response (merged bodies, silent re-sends, extra requests), mitigated by `keepalive: false` on those releases; and `fetch()` rejecting when the connection closes after headers but before the body, which cannot be mitigated, so a truncated 200 is treated as a retried transport failure. `conformance/README.md` records that as a runtime limitation and the Node runner accepts the fallback only for `success-body-interrupted` on Bun before 1.4, labelling the record `runtime_deviation`. Vitest 5 needs Bun 1.2.5+ (`util.parseEnv`). On Bun, AsyncLocalStorage is not restored in `AbortSignal.timeout()` listeners or `MessagePort` messages; the propagation test pins this. CI adds a `bun` job for 1.2.5, 1.3.14, and 1.4.2.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the independently publishable `@cekat/event-sdk` Node.js SDK, request-local framework adapters, and browser visitor-propagation helpers.
+**Goal:** Build the independently publishable `@cekatai/event-sdk` Node.js SDK, request-local framework adapters, and browser visitor-propagation helpers.
 
 **Architecture:** The ESM-only Node entry point owns event validation, built-in `fetch` delivery, retries, response decoding, typed errors, and one `AsyncLocalStorage` visitor store. Framework subpath exports are thin request extractors around that store. Browser-only subpath exports contain no access-token client or `node:` imports and provide explicit enrichment, an optional Axios interceptor, and opt-in allowlisted global interception.
 
@@ -18,7 +18,7 @@
 
 ## Global Constraints
 
-- Package coordinate is `@cekat/event-sdk`; this plan prepares version `0.1.0` and does not publish.
+- Package coordinate is `@cekatai/event-sdk`; this plan prepares version `0.1.0` and does not publish.
 - Run Task 1 before dependency setup and again immediately before release. Record observed official runtime/framework versions; do not substitute projected patch versions.
 - Runtime policy covers maintained/LTS Node releases in roughly the preceding five years. CI minimum/current versions are selected from official release metadata; odd-numbered non-LTS lines are not promised.
 - Send only `POST <origin>/api/events/ingest`; default origin is `https://server.cekat.ai`; authorize with `Bearer <access_token>`; never put the token in browser exports, payloads, errors, logs, or snapshots.
@@ -109,7 +109,7 @@ conformance/mock-ingest-server/
 ## Interfaces
 
 ```ts
-// @cekat/event-sdk/node
+// @cekatai/event-sdk/node
 export type JsonValue = null | boolean | string | number | JsonValue[] | { [key: string]: JsonValue };
 export interface EventInput {
   email?: string;
@@ -160,7 +160,7 @@ export class CekatVisitorMiddleware implements import("@nestjs/common").NestMidd
 export function withCekatVisitor<TReq extends {headers: Record<string, unknown>}, TRes>(handler: (req: TReq, res: TRes) => unknown): (req: TReq, res: TRes) => unknown;
 export function runWithCekatVisitor<T>(request: Request, handler: () => T): T;          // ./nextjs, Node runtime only
 
-// @cekat/event-sdk/browser
+// @cekatai/event-sdk/browser
 export interface AllowedTarget { origin: string; pathPrefix?: string }
 export interface AutoPropagationOptions { allowedTargets: readonly AllowedTarget[] }
 export function readVisitorId(cookieSource?: string): string | undefined;
@@ -168,7 +168,7 @@ export function withVisitor(init?: RequestInit): RequestInit;
 export function withVisitorRequest(request: Request): Request;
 export function enableAutoPropagation(options: AutoPropagationOptions): () => void;
 
-// @cekat/event-sdk/browser/axios
+// @cekatai/event-sdk/browser/axios
 export function createAxiosVisitorInterceptor(): (config: import("axios").InternalAxiosRequestConfig) => import("axios").InternalAxiosRequestConfig;
 ```
 
@@ -240,7 +240,7 @@ The package exports only `./node`, `./express`, `./fastify`, `./koa`, `./nestjs`
 
 **Files:** Create `node/src/node/client.ts`, `node/src/node/index.ts`, `node/test/node/client.test.ts`.
 
-**Interfaces:** Produces `Client` and the complete `@cekat/event-sdk/node` surface. Consumes validation, `currentVisitorId`, and delivery.
+**Interfaces:** Produces `Client` and the complete `@cekatai/event-sdk/node` surface. Consumes validation, `currentVisitorId`, and delivery.
 
 - [ ] **Write failing client tests.** Assert token-only construction, origin validation, `timeoutMs > 0`, integer `retryCount >= 0`, callable injected fetch, fixed endpoint, common/custom keys and flags, explicit/ambient visitor precedence, no ambient visitor outside scope, one payload snapshot without `business_id`, and all five methods returning typed acknowledgement.
 - [ ] **Run red.** Run `cd node && npx vitest run test/node/client.test.ts`. Expected: FAIL because `Client` is absent.
@@ -283,7 +283,7 @@ The package exports only `./node`, `./express`, `./fastify`, `./koa`, `./nestjs`
 
 **Files:** Create `node/src/browser/constants.ts`, `cookie.ts`, `explicit.ts`, `axios.ts`, `index.ts`; create `node/test/browser/cookie.test.ts`, `explicit.test.ts`, `axios.test.ts`, `public-api.types.ts`; modify `node/tsconfig.json`, `node/tsconfig.build.json`, and `node/vitest.config.ts` for their browser-oriented TypeScript/Vitest environment.
 
-**Interfaces:** Produces the exact `@cekat/event-sdk/browser` and `@cekat/event-sdk/browser/axios` signatures from the Interfaces block: `AllowedTarget`, `AutoPropagationOptions`, `readVisitorId(cookieSource?: string): string | undefined`, `withVisitor(init?: RequestInit): RequestInit`, `withVisitorRequest(request: Request): Request`, `enableAutoPropagation(options): () => void`, and `createAxiosVisitorInterceptor(): (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig`. Browser index does not re-export Axios, keeping it in `./browser/axios` and optional. Browser source/declaration compilation uses DOM types and no Node globals; the browser unit project provides a DOM implementation for `document`, `Headers`, and `Request`, while SSR tests delete/omit `document` explicitly.
+**Interfaces:** Produces the exact `@cekatai/event-sdk/browser` and `@cekatai/event-sdk/browser/axios` signatures from the Interfaces block: `AllowedTarget`, `AutoPropagationOptions`, `readVisitorId(cookieSource?: string): string | undefined`, `withVisitor(init?: RequestInit): RequestInit`, `withVisitorRequest(request: Request): Request`, `enableAutoPropagation(options): () => void`, and `createAxiosVisitorInterceptor(): (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig`. Browser index does not re-export Axios, keeping it in `./browser/axios` and optional. Browser source/declaration compilation uses DOM types and no Node globals; the browser unit project provides a DOM implementation for `document`, `Headers`, and `Request`, while SSR tests delete/omit `document` explicitly.
 
 - [ ] **Write failing tests.** Cover exact cookie name, whitespace trimming, malformed/unrelated cookies, SSR with no `document`, copied `Headers`, explicit-header preservation case-insensitively, immutable `Request` cloning with URL, method, body bytes, credentials, cache, redirect, referrer, integrity, keepalive, and signal identity intact, and Axios `AxiosHeaders` plus plain-header configs. Add a TypeScript consumer fixture importing both browser subpaths and assigning every public function to the exact declared type. Assert no helper imports `./node`, references `AsyncLocalStorage`, or contains an access token.
 - [ ] **Run red.** Run `cd node && npx vitest run test/browser/{cookie,explicit,axios}.test.ts && npx tsc --noEmit -p tsconfig.json`. Expected: FAIL because browser modules are absent.

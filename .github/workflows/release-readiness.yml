@@ -17,7 +17,7 @@ concurrency:
 jobs:
   preflight:
     name: Preflight (root script tests and compatibility gates)
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -41,7 +41,7 @@ jobs:
   package:
     name: Package ${{ matrix.language }}
     needs: preflight
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -51,7 +51,6 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
       TEST_TARGET_FRAMEWORK: net10.0
-      COMPOSER_IPRESOLVE: '4'
       RAILS_VERSION: '~> 8.1.0'
       RACK_VERSION: '~> 3.2.0'
       JSON_VERSION: '>= 2.7'
@@ -114,8 +113,6 @@ jobs:
 
       - if: matrix.language == 'dotnet'
         uses: actions/setup-dotnet@v6
-        env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: 10.0.x
       - if: matrix.language == 'dotnet'
@@ -127,13 +124,6 @@ jobs:
           mv global.json.tmp global.json
           dotnet --version
 
-      - if: matrix.language == 'ruby'
-        name: Make the Ruby tool cache writable
-        run: |
-          if [ ! -w /opt/hostedtoolcache ]; then
-            sudo -n mkdir -p /opt/hostedtoolcache
-            sudo -n chown "$(id -u):$(id -g)" /opt/hostedtoolcache
-          fi
       - if: matrix.language == 'ruby'
         uses: ruby/setup-ruby@v1
         with:
@@ -154,7 +144,7 @@ jobs:
   aggregate:
     name: Validate all package manifests
     needs: package
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -173,7 +163,7 @@ jobs:
   manual-gates:
     name: Manual release gates (not automated)
     needs: aggregate
-    runs-on: platform-ci-aws
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: List the release-owner steps this workflow does not perform

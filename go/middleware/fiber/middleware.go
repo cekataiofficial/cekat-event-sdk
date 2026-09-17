@@ -4,8 +4,8 @@ package fiber
 import (
 	"strings"
 
-	cekat "github.com/cekataiofficial/cekat-event-sdk-go"
 	fiberlib "github.com/gofiber/fiber/v3"
+	cekat "golang.cekat.ai/event-sdk"
 )
 
 // Middleware adds the request visitor ID, when supplied, to the standard context

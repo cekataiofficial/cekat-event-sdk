@@ -1,10 +1,10 @@
-module github.com/cekataiofficial/cekat-event-sdk-go/middleware/fiber
+module golang.cekat.ai/event-sdk/middleware/fiber
 
 go 1.25.0
 
 require (
-	github.com/cekataiofficial/cekat-event-sdk-go v0.1.0
 	github.com/gofiber/fiber/v3 v3.5.0
+	golang.cekat.ai/event-sdk v0.1.0
 )
 
 require (
@@ -25,4 +25,4 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 )
 
-replace github.com/cekataiofficial/cekat-event-sdk-go => ../..
+replace golang.cekat.ai/event-sdk => ../..

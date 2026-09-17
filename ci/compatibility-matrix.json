@@ -47,7 +47,7 @@
         { "name": "Koa", "supported": "2.13+, 3", "declared_in": { "file": "node/package.json", "contains": "\"koa\": \"^2.13.0 || ^3.0.0\"" }, "tested": ["3.2.1", "2.16.4"] },
         { "name": "NestJS", "supported": "10, 11, 12", "declared_in": { "file": "node/package.json", "contains": "\"@nestjs/core\": \"^10.0.0 || ^11.0.0 || ^12.0.0\"" }, "tested": ["12.0.1", "10.4.22"] },
         { "name": "Next.js", "supported": "14, 15, 16 (Node runtime)", "declared_in": { "file": "node/package.json", "contains": "\"next\": \"^14.0.0 || ^15.0.0 || ^16.0.0\"" }, "tested": ["16.3.5"] },
-        { "name": "Bun.serve, Hono, Elysia", "supported": "fetch-style handlers via @cekat/event-sdk/fetch", "declared_in": { "file": "node/package.json", "contains": "\"./fetch\"" }, "tested": ["1.2.5", "1.3.14", "1.4.2"] }
+        { "name": "Bun.serve, Hono, Elysia", "supported": "fetch-style handlers via @cekatai/event-sdk/fetch", "declared_in": { "file": "node/package.json", "contains": "\"./fetch\"" }, "tested": ["1.2.5", "1.3.14", "1.4.2"] }
       ],
       "end_of_support": []
     },

@@ -48,7 +48,7 @@ Adapters import framework packages only for types, so each declared peer range c
 | koa | ^2.13.0 \|\| ^3.0.0 |
 | next | ^14.0.0 \|\| ^15.0.0 \|\| ^16.0.0 |
 
-Older-major smoke evidence (2026-09-13): the packed SDK was installed alongside Express 4.22.2, Koa 2.16.4, Fastify 4.29.1, and NestJS 10.4.22 (`@nestjs/platform-express` and `@nestjs/platform-fastify`) with no peer conflicts; each adapter preserved the visitor ID across five parallel JSON POST requests with body parsing. `require('@cekat/event-sdk')` loaded the package on Node 22.12.0 and 24.18.0. The Fastify adapter no longer depends on `fastify-plugin`; it applies the equivalent `skip-override` plugin metadata directly.
+Older-major smoke evidence (2026-09-13): the packed SDK was installed alongside Express 4.22.2, Koa 2.16.4, Fastify 4.29.1, and NestJS 10.4.22 (`@nestjs/platform-express` and `@nestjs/platform-fastify`) with no peer conflicts; each adapter preserved the visitor ID across five parallel JSON POST requests with body parsing. `require('@cekatai/event-sdk')` loaded the package on Node 22.12.0 and 24.18.0. The Fastify adapter no longer depends on `fastify-plugin`; it applies the equivalent `skip-override` plugin metadata directly.
 
 ## Bun
 
