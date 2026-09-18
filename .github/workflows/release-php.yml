@@ -4,8 +4,8 @@ name: Release PHP package
 # of a repository and hosts nothing itself, so this monorepo cannot be submitted directly. The publish job
 # mirrors the php/ directory to cekataiofficial/cekat-event-sdk-php with composer.json at its root and tags
 # it vX.Y.Z; Packagist's GitHub App on that repository then picks up the tag. The mirror is generated: all
-# development happens here. The job needs a token with write access to the mirror, read from the
-# "packagist" environment, which requires approval.
+# development happens here. The job writes to the mirror with that repository's deploy key, read from
+# the "packagist" environment, which requires approval.
 on:
   push:
     tags:
@@ -84,13 +84,18 @@ jobs:
             identical|behind) ;;
             *) echo "::error::the tagged commit is not on main (compare status: $status)"; exit 1 ;;
           esac
+      # The mirror is written with a deploy key belonging to that repository, so releases do not depend on
+      # any person's account and the credential cannot reach another repository.
       - name: Mirror php/ and tag the release
         env:
-          TOKEN: ${{ secrets.PHP_MIRROR_TOKEN }}
+          DEPLOY_KEY: ${{ secrets.PHP_MIRROR_DEPLOY_KEY }}
         run: |
-          git clone --quiet "https://x-access-token:$TOKEN@github.com/$MIRROR.git" "$RUNNER_TEMP/mirror"
-          # Keep the token out of the mirror's stored remote URL.
-          git -C "$RUNNER_TEMP/mirror" remote set-url origin "https://x-access-token:$TOKEN@github.com/$MIRROR.git"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+          git clone --quiet "git@github.com:$MIRROR.git" "$RUNNER_TEMP/mirror"
           cd "$RUNNER_TEMP/mirror"
           if git ls-remote --tags --exit-code origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
             echo "::error::$MIRROR already has the tag v$VERSION"
