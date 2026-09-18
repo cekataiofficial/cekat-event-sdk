@@ -187,6 +187,6 @@ The default `GuzzleTransport` enforces the per-attempt timeout (connection, head
 ./scripts/package --version 0.1.0 --output /absolute/empty-directory
 ```
 
-Runs `composer validate --strict`, installs dependencies, runs `composer audit`, the unit tests, PHPStan, and PHP-CS-Fixer, then writes a Composer archive and a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes. Because Packagist reads `composer.json` from a repository root, releasing this directory requires a split repository, like the Go module.
+Runs `composer validate --strict`, installs dependencies, runs `composer audit`, the unit tests, PHPStan, and PHP-CS-Fixer, then writes a Composer archive and a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes. Because Packagist reads `composer.json` from a repository root, releases go through a generated mirror: pushing a `php/vX.Y.Z` tag makes the repository's `release-php.yml` workflow copy this directory to [cekataiofficial/cekat-event-sdk-php](https://github.com/cekataiofficial/cekat-event-sdk-php) and tag it `vX.Y.Z`, which is what Packagist reads. Development stays here. See the root release checklist.
 
 `./scripts/conformance` runs the shared conformance fixtures; see `conformance/README.md`. The three caller-cancellation cases are reported as `not_applicable` for PHP.

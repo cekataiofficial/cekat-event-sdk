@@ -1,0 +1,136 @@
+name: Release PHP package
+
+# Releases cekat/event-sdk when a php/vX.Y.Z tag is pushed. Packagist reads Composer packages from the root
+# of a repository and hosts nothing itself, so this monorepo cannot be submitted directly. The publish job
+# mirrors the php/ directory to cekataiofficial/cekat-event-sdk-php with composer.json at its root and tags
+# it vX.Y.Z; Packagist's GitHub App on that repository then picks up the tag. The mirror is generated: all
+# development happens here. The job needs a token with write access to the mirror, read from the
+# "packagist" environment, which requires approval.
+on:
+  push:
+    tags:
+      - 'php/v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-php-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  MIRROR: cekataiofficial/cekat-event-sdk-php
+
+jobs:
+  build:
+    name: Build and verify the package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: curl, json, mbstring, zip
+          coverage: none
+          tools: composer:v2
+      # composer.json carries no version: Packagist derives versions from tags. The packaging script's
+      # constant is the one declared version in the tree, so the tag must match it.
+      - name: Tag matches the packaged version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#php/v}"
+          declared="$(sed -n "s/^const VERSION = '\([^']*\)';/\1/p" php/scripts/package)"
+          if [ "$version" != "$declared" ]; then
+            echo "::error::tag $TAG does not match the php/scripts/package version $declared"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build and validate the package
+        run: scripts/package-readiness.sh --language php --output "$RUNNER_TEMP/cekat-artifacts"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: composer-package
+          path: ${{ runner.temp }}/cekat-artifacts/php
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Mirror to the Packagist repository
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: packagist
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: The tagged commit is on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status="$(gh api "repos/${{ github.repository }}/compare/main...${{ github.sha }}" --jq .status)"
+          case "$status" in
+            identical|behind) ;;
+            *) echo "::error::the tagged commit is not on main (compare status: $status)"; exit 1 ;;
+          esac
+      - name: Mirror php/ and tag the release
+        env:
+          TOKEN: ${{ secrets.PHP_MIRROR_TOKEN }}
+        run: |
+          git clone --quiet "https://x-access-token:$TOKEN@github.com/$MIRROR.git" "$RUNNER_TEMP/mirror"
+          # Keep the token out of the mirror's stored remote URL.
+          git -C "$RUNNER_TEMP/mirror" remote set-url origin "https://x-access-token:$TOKEN@github.com/$MIRROR.git"
+          cd "$RUNNER_TEMP/mirror"
+          if git ls-remote --tags --exit-code origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::$MIRROR already has the tag v$VERSION"
+            exit 1
+          fi
+          # Replace the mirror's contents with this tag's php/ directory, so a removed file disappears too.
+          rsync --archive --delete --exclude .git "$GITHUB_WORKSPACE/php/" .
+          {
+            printf '# Generated repository\n\n'
+            printf 'This repository is generated from the "php/" directory of\n'
+            printf '[cekataiofficial/cekat-event-sdk](https://github.com/cekataiofficial/cekat-event-sdk), which is\n'
+            printf 'where the PHP SDK is developed and where issues and pull requests belong. Composer and Packagist\n'
+            printf 'need "composer.json" at a repository root, which is why this mirror exists.\n\n'
+            printf 'Release v%s was generated from commit %s.\n' "$VERSION" "$GITHUB_SHA"
+          } > MIRROR.md
+          git add -A
+          if git diff --cached --quiet; then
+            echo "the mirror already matches this tag; tagging the existing commit"
+          else
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit --quiet -m "Release v$VERSION" -m "Generated from ${{ github.repository }}@${{ github.sha }}"
+          fi
+          git tag "v$VERSION"
+          git push --quiet origin HEAD:main
+          git push --quiet origin "refs/tags/v$VERSION"
+          {
+            echo "### Mirrored cekat/event-sdk $VERSION"
+            echo ""
+            echo "Tag \`v$VERSION\` pushed to https://github.com/$MIRROR"
+            echo ""
+            echo "Packagist updates from its GitHub App hook on that repository, usually within a minute."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Packagist has the new version
+        run: |
+          for _ in $(seq 1 20); do
+            if curl --no-progress-meter -fL "https://repo.packagist.org/p2/cekat/event-sdk.json" \
+              | jq -e --arg version "$VERSION" '.packages["cekat/event-sdk"][] | select(.version_normalized | startswith($version))' >/dev/null; then
+              echo "Packagist lists v$VERSION"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::warning::Packagist does not list v$VERSION yet; check the GitHub App hook on $MIRROR"

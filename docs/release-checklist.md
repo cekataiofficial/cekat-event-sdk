@@ -1,6 +1,6 @@
 # Release checklist
 
-Four workflows release, each started by a release owner pushing that language's tag: [npm](#4-npm-release) (`node/vX.Y.Z`), [Go](#5-go-release) (`go/vX.Y.Z`), [PyPI](#6-pypi-release) (`python/vX.Y.Z`), and [RubyGems](#7-rubygems-release) (`ruby/vX.Y.Z`). Each one rebuilds and verifies the package with `scripts/package-readiness.sh` before anything leaves the repository, and each waits for approval in its own GitHub environment. Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
+Six workflows release, each started by a release owner pushing that language's tag: [npm](#4-npm-release) (`node/vX.Y.Z`), [Go](#5-go-release) (`go/vX.Y.Z`), [PyPI](#6-pypi-release) (`python/vX.Y.Z`), [RubyGems](#7-rubygems-release) (`ruby/vX.Y.Z`), [Maven Central](#8-maven-central-release) (`java/vX.Y.Z`), and [Packagist](#9-packagist-release) (`php/vX.Y.Z`). Each one rebuilds and verifies the package with `scripts/package-readiness.sh` before anything leaves the repository, and each waits for approval in its own GitHub environment. Only NuGet (.NET) is still published by hand. Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
 
 Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md).
 
@@ -31,8 +31,8 @@ Complete these outside the workflows; they are not automated:
 - [ ] **Registry ownership and coordinates.** Confirm Cekat controls each package name: npm `@cekatai/event-sdk`, PyPI `cekat-event-sdk`, Packagist `cekat/event-sdk`, RubyGems `cekat-event-sdk`, NuGet `Cekat.EventSdk`, `Cekat.EventSdk.AspNetCore`, and `Cekat.EventSdk.AzureFunctions`, Maven Central group `ai.cekat` (namespace verification is still open; see [`java/compatibility.md`](../java/compatibility.md)), and the Go vanity path `golang.cekat.ai/event-sdk`: `https://golang.cekat.ai/event-sdk?go-get=1` and each adapter path must serve the per-module `go-import` meta tags described in [`go/COMPATIBILITY.md`](../go/COMPATIBILITY.md#module-path-update-2026-09-15-utc).
 - [ ] **License and legal review** of the MIT license and third-party dependencies.
 - [ ] **Changelog and release notes** approved for every SDK.
-- [ ] **Signing**, where a registry requires or you choose it (for example Maven Central artifact signatures), performed by the release owner.
-- [ ] **Credentials or trusted publishing** configured by the release owner; no workflow in this repository holds registry credentials (npm, PyPI, and RubyGems all use trusted publishing, described below).
+- [ ] **Signing**, where a registry requires or you choose it. Maven Central requires a `.asc` signature beside every file; `release-java.yml` signs with the key in the `maven-central` environment.
+- [ ] **Credentials or trusted publishing** configured by the release owner. npm, PyPI, and RubyGems use trusted publishing and store nothing. Maven Central and Packagist have no trusted publishing, so `release-java.yml` and `release-php.yml` read secrets from their own approval-gated environments; no other workflow may hold credentials.
 - [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.1.0`, `go/middleware/gin/v0.1.0`); pushing the core tag creates the adapter tags. The npm package is tagged `node/v0.1.0`.
 - [ ] **Publication** of exactly the verified artifacts: compare each file's SHA-256 with the release readiness summary before uploading.
 - [ ] **Post-release check.** Install each published package into a clean project and send a test event to a non-production tenant.
@@ -64,7 +64,7 @@ One-time setup:
 
 1. The GitHub repository must be public, and `golang.cekat.ai` must serve the per-module `go-import` meta tags described in [`go/COMPATIBILITY.md`](../go/COMPATIBILITY.md#module-path-update-2026-09-15-utc). Until both are true, the modules resolve for nobody and the workflow's proxy step reports the paths it could not resolve.
 2. Create a GitHub environment named `go-release` with the release owners as required reviewers, and restrict its deployment tags to `go/v*`.
-3. In the tag ruleset that restricts `go/**`, add the GitHub Actions token to the bypass list. Without it the workflow cannot create the four adapter tags.
+3. Restrict only `go/v*` in the tag ruleset, not `go/middleware/**`. A ruleset bypass list accepts repository roles, teams, GitHub Apps, and Dependabot, but not the Actions token, so restricting the adapter tags would stop the workflow from creating them. Gating the core tag is enough, because nothing else creates adapter tags. To lock them as well, install a GitHub App with `contents: write`, add it to the bypass list, and mint its token in the workflow instead of using `GITHUB_TOKEN`.
 
 Each release:
 
@@ -120,4 +120,47 @@ Each release:
 3. The `build` job checks the tag against the version constant and runs `scripts/package-readiness.sh --language ruby`, which runs the specs, RuboCop, and the bundle audit, then builds the gem with a SHA-256 manifest.
 4. Approve the `publish` job in the `rubygems` environment. It revalidates the manifest, checks the name and version inside the gem, refuses a version that already exists, exchanges the job's OIDC token for short-lived credentials, and pushes that gem file.
 5. Check the gem page, then install the release into a clean bundle as the post-release check.
+
+## 8. Maven Central release
+
+Maven Central has no trusted publishing, and a published version can never be replaced or removed. `.github/workflows/release-java.yml` therefore holds credentials and stops short of publishing: it uploads a validated deployment and a release owner presses the final button.
+
+One-time setup:
+
+1. Create a Sonatype account at [central.sonatype.com](https://central.sonatype.com/), then register the `ai.cekat` namespace. The Portal verifies it through DNS: the namespace is the company domain reversed, so add the TXT record it shows to that domain's zone, the same zone that serves the Go vanity host.
+2. On the Portal account page, generate a user token. It is a username and password pair.
+3. Create an OpenPGP signing key for releases (`gpg --full-generate-key`, RSA 4096, no expiry or a long one), publish the public key to `keys.openpgp.org` so Central can verify signatures, and export the private key with `gpg --armor --export-secret-keys <key-id>`. Keep the private key and its passphrase in your password manager as well.
+4. In the GitHub repository settings, create an environment named `maven-central` with required reviewers, restrict its deployment tags to `java/v*`, and add four **environment** secrets: `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `GPG_PRIVATE_KEY` (the armored private key), and `GPG_PASSPHRASE`. Environment secrets are unreadable outside the approved job.
+5. Add `java/v*` to the tag ruleset.
+
+Each release:
+
+1. Update the version in `java/pom.xml` (and the modules that name it) and in `java/scripts/package`, merge, and wait for `CI required`.
+2. Push the tag `java/v<version>` on the release commit.
+3. The `build` job checks the tag against the POM version and runs `scripts/package-readiness.sh --language java`, producing the jar, sources jar, javadoc jar, and POM for each artifact in the `ai/cekat/...` layout with a SHA-256 manifest.
+4. Approve the `publish` job in the `maven-central` environment. It revalidates the manifest, signs every file and writes its `.md5` and `.sha1`, zips the bundle, uploads it to the Portal, and polls until the deployment is `VALIDATED`. Nothing is public at this point.
+5. Open [the Portal's deployments page](https://central.sonatype.com/publishing/deployments), review the deployment named in the job summary, and press **Publish**. Artifacts appear on Maven Central within about 15 minutes and in search later.
+6. Post-release check: resolve `ai.cekat:cekat-event-sdk-core:<version>` in a clean local repository.
+
+Switch the workflow's `publishingType` to `AUTOMATIC` only once you trust the pipeline; `USER_MANAGED` is what keeps a permanent mistake reversible.
+
+## 9. Packagist release
+
+Packagist stores no archives and requires `composer.json` at a repository root, so this monorepo cannot be submitted directly. `.github/workflows/release-php.yml` mirrors the `php/` directory to `cekataiofficial/cekat-event-sdk-php` — where `composer.json` sits at the root — and tags it there. The mirror is generated output: all development stays in this repository.
+
+One-time setup:
+
+1. Create the public repository `cekataiofficial/cekat-event-sdk-php`, empty, with a `main` branch. Its description should say it is generated from this repository.
+2. Create a fine-grained personal access token limited to that one repository with **Contents: Read and write**, owned by a release-owner account or a machine account. Note its expiry and set a reminder to rotate it.
+3. In the GitHub repository settings, create an environment named `packagist` with required reviewers, restrict its deployment tags to `php/v*`, and add the token as the environment secret `PHP_MIRROR_TOKEN`.
+4. The mirror must be **public**: Packagist indexes only public repositories. Once it has content, submit `https://github.com/cekataiofficial/cekat-event-sdk-php` on Packagist, which claims the `cekat` vendor name, then install the Packagist GitHub App on the mirror so new tags sync immediately. Submitting before the first release tag means the workflow's Packagist check passes on the first run; until the package is registered, that step only warns.
+5. Add `php/v*` to the tag ruleset.
+
+Each release:
+
+1. Update the version constant in `php/scripts/package`, merge, and wait for `CI required`. `php/composer.json` declares no version, because Packagist derives versions from tags.
+2. Push the tag `php/v<version>` on the release commit.
+3. The `build` job checks the tag against that constant and runs `scripts/package-readiness.sh --language php`, which runs the tests, PHPStan, the coding-standard check, and `composer archive`.
+4. Approve the `publish` job in the `packagist` environment. It confirms the tagged commit is on `main`, refuses a tag the mirror already has, replaces the mirror's contents with this tag's `php/` directory, commits, pushes, tags `v<version>`, and then waits for Packagist to list the version. If Packagist has not picked it up, the job warns instead of failing; check the GitHub App hook on the mirror.
+5. Post-release check: `composer require cekat/event-sdk` in a clean project.
 
