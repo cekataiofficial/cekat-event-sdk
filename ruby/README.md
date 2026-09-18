@@ -135,4 +135,4 @@ RAILS_VERSION="~> 8.0.0" RACK_VERSION="~> 2.2" bundle update && bundle exec rake
 ./scripts/package --version 0.1.0 --output /absolute/empty-directory
 ```
 
-`scripts/package` runs the specs, RuboCop, and `bundle-audit`, then builds the gem and a SHA-256 `manifest.json`. It never pushes, signs, or tags. `scripts/conformance` runs the shared conformance fixtures (see `conformance/README.md`); the three caller-cancellation cases are reported as `not_applicable` for Ruby.
+`scripts/package` runs the specs, RuboCop, and `bundle-audit`, then builds the gem and a SHA-256 `manifest.json`. It never pushes, signs, or tags; releases to RubyGems run from the repository's `release-ruby.yml` workflow when a `ruby/vX.Y.Z` tag is pushed. `scripts/conformance` runs the shared conformance fixtures (see `conformance/README.md`); the three caller-cancellation cases are reported as `not_applicable` for Ruby.
