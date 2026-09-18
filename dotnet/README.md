@@ -195,4 +195,4 @@ dotnet test Cekat.EventSdk.sln                                  # unit, ASP.NET 
 scripts/package --version 0.1.0 --output /absolute/empty/dir    # tests, vulnerability audit, pack, manifest
 ```
 
-On the .NET 10 SDK, add `-p:TestTargetFramework=net10.0` (or set `TEST_TARGET_FRAMEWORK=net10.0` for the scripts) to run the tests on .NET 10. `scripts/package` never pushes, signs, tags, or publishes. See [COMPATIBILITY.md](COMPATIBILITY.md) for supported versions.
+On the .NET 10 SDK, add `-p:TestTargetFramework=net10.0` (or set `TEST_TARGET_FRAMEWORK=net10.0` for the scripts) to run the tests on .NET 10. `scripts/package` never pushes, signs, tags, or publishes; releases to nuget.org run from the repository's `release-dotnet.yml` workflow when a `dotnet/vX.Y.Z` tag is pushed. See [COMPATIBILITY.md](COMPATIBILITY.md) for supported versions.
