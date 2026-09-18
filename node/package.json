@@ -37,6 +37,10 @@
       "types": "./dist/node/index.d.ts",
       "default": "./dist/node/index.js"
     },
+    "./stripe": {
+      "types": "./dist/node/stripe.d.ts",
+      "default": "./dist/node/stripe.js"
+    },
     "./fetch": {
       "types": "./dist/integrations/fetch.d.ts",
       "default": "./dist/integrations/fetch.js"

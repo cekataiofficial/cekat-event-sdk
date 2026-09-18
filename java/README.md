@@ -136,6 +136,20 @@ executor.submit(() -> {
 
 Submitting from a background executor also keeps tracking off the request's critical path. Jobs that run later need only the contact's email or phone number.
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```java
+import ai.cekat.events.stripe.StripeMetadata;
+
+Map<String, String> metadata = StripeMetadata.mergeMetadata(merchantMetadata, StripeMetadata.fromCurrentVisitor().get("cekat_" + "visitor_id"));
+// paymentIntentParams.putMetadata(metadata);
+// checkoutSessionParams.putMetadata(metadata); // and payment-mode PaymentIntent metadata
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a new immutable map, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Errors, interruption, and retries
 
 All SDK exceptions extend the unchecked `CekatException`, which exposes `attempts()` and `deliveryOutcomeUnknown()`:

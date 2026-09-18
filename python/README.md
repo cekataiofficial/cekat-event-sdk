@@ -135,6 +135,20 @@ with visitor_scope(" visitor-123 "):  # explicit value, trimmed
 
 Scopes nest and restore the previous visitor on exit, including when an exception or cancellation leaves the block.
 
+## Stripe metadata composition
+
+Use the dependency-free helper with the merchant's own Stripe client; it does not create Stripe requests or send Cekat events.
+
+```python
+from cekat_event_sdk.stripe import merge_metadata, metadata_from_current_visitor
+
+metadata = merge_metadata(merchant_metadata, metadata_from_current_visitor().get("cekat_" + "visitor_id"))
+stripe.PaymentIntent.create(amount=1200, currency="usd", metadata=metadata)
+stripe.checkout.Session.create(mode="payment", metadata=metadata, payment_intent_data={"metadata": metadata})
+```
+
+The helper accepts only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor and returns a fresh mapping. Invalid or absent visitors leave merchant metadata unchanged.
+
 ## Keep tracking off the request's critical path
 
 Each call waits for Cekat's response (up to 3 seconds per attempt, plus retries). Don't make users wait for it.

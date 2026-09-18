@@ -48,6 +48,12 @@ Each integration extracts the visitor at the start of a request, makes it curren
 
 Install the integration before the handlers or middleware that send events. In Go, pass the context that carries the visitor: `r.Context()`, `c.Request.Context()` for Gin (not `c`), `c.Request().Context()` for Echo, and `c.Context()` for Fiber (not `c`).
 
+## Stripe metadata composition
+
+The `stripe` helpers use the current request visitor only to create a fresh native metadata collection containing the Stripe visitor metadata entry. They do not import a Stripe SDK, create a Checkout Session or PaymentIntent, send a Cekat event, or mutate merchant metadata. A merchant passes the returned metadata into its own official Stripe client for a direct PaymentIntent, a Checkout Session's `metadata`, and, for payment-mode Checkout, `payment_intent_data.metadata`.
+
+A valid visitor is 1–128 ASCII letters, digits, `_`, or `-` after trimming. `merge` returns a new collection; it preserves merchant entries and replaces only a valid Cekat visitor value. With no valid visitor, it returns a fresh copy without adding a Cekat key.
+
 ## Work outside the request
 
 A visitor scope belongs to the request. Whether it reaches other work depends on the runtime:

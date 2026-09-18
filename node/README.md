@@ -151,6 +151,20 @@ Bun 1.2.5 through 1.3.x are supported with two differences, both caused by Bun's
 
 Bun older than 1.2.5 is not tested. See [docs/compatibility.md](docs/compatibility.md#bun) for the evidence.
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```ts
+import { mergeMetadata, metadataFromCurrentVisitor } from '@cekatai/event-sdk/stripe';
+
+const metadata = mergeMetadata(merchantMetadata, metadataFromCurrentVisitor()['cekat_' + 'visitor_id']);
+await stripe.paymentIntents.create({ amount: 1200, currency: 'usd', metadata });
+await stripe.checkout.sessions.create({ mode: 'payment', metadata, payment_intent_data: { metadata } });
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a fresh object, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Errors and delivery outcome
 
 Invalid local input rejects with `ValidationError` before network I/O. Received responses have known delivery outcome and reject with `AuthenticationError` (401), `EventDefinitionNotFoundError` (404), `ApiError` (other non-200), or `ResponseDecodeError` (malformed, truncated, or unreadable 200). `TransportError` means outcome is unknown after transport failure or SDK timeout. HTTP bodies retained in errors are bounded to 65,536 bytes.

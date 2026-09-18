@@ -72,6 +72,18 @@ end
 
 The visitor scope lives in fiber storage (`Fiber[]`), so it is isolated per request under threaded servers (Puma) and fiber-based servers (Falcon). Every scope restores the previous visitor when it ends, including when it raises, so long-running workers never leak a visitor ID between requests. Threads and fibers started inside a request begin with a copy of its scope. The scope ends when the middleware returns, so events emitted while a streaming response body is iterated must pass `visitor_id:` explicitly.
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```ruby
+metadata = CekatEventSdk::Stripe.merge_metadata(merchant_metadata, CekatEventSdk::Stripe.metadata_from_current_visitor["cekat_" + "visitor_id"])
+# stripe.payment_intents.create(amount: 1200, currency: "usd", metadata: metadata)
+# stripe.checkout.sessions.create(mode: "payment", metadata: metadata, payment_intent_data: { metadata: metadata })
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a fresh hash, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Keep tracking off the request's critical path
 
 Calls are synchronous, so each event adds its round-trip to the request. To send in the background, capture the visitor ID while the request scope is active and pass it explicitly:

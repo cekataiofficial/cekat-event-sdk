@@ -55,6 +55,20 @@ _, err := client.OrderPaid(ctx, order.Total, order.Currency, cekat.Event{
 })
 ```
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```go
+import cekatstripe "golang.cekat.ai/event-sdk/stripe"
+
+metadata := cekatstripe.MergeMetadata(merchantMetadata, cekatstripe.MetadataFromContext(r.Context())["cekat_"+"visitor_id"])
+// stripeParams.Metadata = metadata
+// checkoutParams.Metadata = metadata; checkoutParams.PaymentIntentData.Metadata = metadata
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a fresh map, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Keep tracking off the request's critical path
 
 Event submission is synchronous. To avoid adding tracking latency to a user-facing handler, submit in a goroutine. Use `context.WithoutCancel` so the goroutine keeps the request's visitor ID but is not cancelled when the handler returns, and always add your own deadline:

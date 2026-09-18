@@ -117,6 +117,20 @@ VisitorContext::shared()->runWithVisitorId($visitorId, function () use ($cekat):
 
 Every integration restores the previous visitor when the request finishes, including when it throws, so PHP-FPM, Octane, RoadRunner, and FrankenPHP workers never leak a visitor ID between sequential requests. Servers that interleave requests in one process with coroutines (for example Swoole coroutines) must implement `VisitorContextInterface` with coroutine-local storage instead of sharing `VisitorContext`.
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```php
+use Cekat\EventSdk\Stripe;
+
+$metadata = Stripe::mergeMetadata($merchantMetadata, Stripe::metadataFromContext()['cekat_' . 'visitor_id'] ?? null);
+// $stripe->paymentIntents->create(['amount' => 1200, 'currency' => 'usd', 'metadata' => $metadata]);
+// $stripe->checkout->sessions->create(['mode' => 'payment', 'metadata' => $metadata, 'payment_intent_data' => ['metadata' => $metadata]]);
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a fresh array, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Keep tracking off the request's critical path
 
 PHP calls are synchronous, so each event adds its round-trip to the request. To send after the response, capture the visitor ID first, because the request scope has ended when deferred work runs:
