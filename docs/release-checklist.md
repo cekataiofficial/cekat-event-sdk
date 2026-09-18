@@ -151,8 +151,8 @@ Packagist stores no archives and requires `composer.json` at a repository root, 
 One-time setup:
 
 1. Create the public repository `cekataiofficial/cekat-event-sdk-php`, empty, with a `main` branch. Its description should say it is generated from this repository.
-2. Create a fine-grained personal access token limited to that one repository with **Contents: Read and write**, owned by a release-owner account or a machine account. Note its expiry and set a reminder to rotate it.
-3. In the GitHub repository settings, create an environment named `packagist` with required reviewers, restrict its deployment tags to `php/v*`, and add the token as the environment secret `PHP_MIRROR_TOKEN`.
+2. Generate a dedicated SSH key pair (`ssh-keygen -t ed25519 -C "cekat-event-sdk-php mirror" -f mirror-key -N ""`) and add the public half to the mirror under **Settings → Deploy keys** with **Allow write access**. A deploy key belongs to the mirror repository, so releases do not depend on any person's account, it never expires, and it cannot reach another repository.
+3. In this repository's settings, create an environment named `packagist` with required reviewers, restrict its deployment tags to `php/v*`, and add the private half as the environment secret `PHP_MIRROR_DEPLOY_KEY`. Delete the local copy of the private key afterwards, keeping a backup only in your password manager.
 4. The mirror must be **public**: Packagist indexes only public repositories. Once it has content, submit `https://github.com/cekataiofficial/cekat-event-sdk-php` on Packagist, which claims the `cekat` vendor name, then install the Packagist GitHub App on the mirror so new tags sync immediately. Submitting before the first release tag means the workflow's Packagist check passes on the first run; until the package is registered, that step only warns.
 5. Add `php/v*` to the tag ruleset.
 

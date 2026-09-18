@@ -602,7 +602,7 @@ class SecretHoldingReleaseWorkflowTest(unittest.TestCase):
     WORKFLOWS = {"java": JAVA_RELEASE_WORKFLOW, "php": PHP_RELEASE_WORKFLOW}
     SECRETS = {
         "java": {"GPG_PRIVATE_KEY", "GPG_PASSPHRASE", "MAVEN_CENTRAL_USERNAME", "MAVEN_CENTRAL_PASSWORD"},
-        "php": {"PHP_MIRROR_TOKEN"},
+        "php": {"PHP_MIRROR_DEPLOY_KEY"},
     }
     ENVIRONMENTS = {"java": "maven-central", "php": "packagist"}
     TAGS = {"java": "java/v*", "php": "php/v*"}
@@ -668,6 +668,11 @@ class SecretHoldingReleaseWorkflowTest(unittest.TestCase):
         self.assertLess(publish.index("compare/main..."), publish.index("git push"), "the mirror is pushed before the commit is checked")
         self.assertIn('git ls-remote --tags --exit-code origin "refs/tags/v$VERSION"', publish)
         self.assertIn('git tag "v$VERSION"', publish)
+        # A repository deploy key over SSH, with host verification left on.
+        self.assertIn('git clone --quiet "git@github.com:$MIRROR.git"', publish)
+        self.assertIn("chmod 600 ~/.ssh/mirror_key", publish)
+        self.assertIn("StrictHostKeyChecking=yes", publish)
+        self.assertNotIn("x-access-token", publish)
 
 
 if __name__ == "__main__":
