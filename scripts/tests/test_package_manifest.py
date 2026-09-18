@@ -25,6 +25,8 @@ WRAPPER = ROOT / "scripts" / "package-readiness.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "release-readiness.yml"
 NODE_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-node.yml"
 GO_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-go.yml"
+PYTHON_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-python.yml"
+RUBY_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-ruby.yml"
 SCHEMA = ROOT / "ci" / "package-manifest.schema.json"
 LANGUAGES = ("go", "node", "python", "php", "java", "dotnet", "ruby")
 
@@ -431,7 +433,7 @@ class NoPublishTest(unittest.TestCase):
 
     def test_only_the_release_workflows_publish(self) -> None:
         workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
-        releases = {NODE_RELEASE_WORKFLOW, GO_RELEASE_WORKFLOW}
+        releases = {NODE_RELEASE_WORKFLOW, GO_RELEASE_WORKFLOW, PYTHON_RELEASE_WORKFLOW, RUBY_RELEASE_WORKFLOW}
         self.assertTrue(releases.issubset(set(workflows)))
         for path in workflows:
             if path in releases:
@@ -525,6 +527,66 @@ class GoReleaseWorkflowTest(unittest.TestCase):
         proxy = self.release[self.release.index("Warm the public module proxy") :]
         self.assertNotIn("exit 1", proxy)
         self.assertIn("::warning::", proxy)
+
+
+
+class RegistryReleaseWorkflowTest(unittest.TestCase):
+    """Each registry release publishes exactly one artifact set that the build job verified, without secrets."""
+
+    CASES = (
+        ("python", "python/v*", "pypi", "cekat-event-sdk", "pypa/gh-action-pypi-publish@"),
+        ("ruby", "ruby/v*", "rubygems", "cekat-event-sdk", "rubygems/configure-rubygems-credentials@"),
+    )
+
+    def workflow(self, language: str) -> tuple[str, str, str]:
+        path = PYTHON_RELEASE_WORKFLOW if language == "python" else RUBY_RELEASE_WORKFLOW
+        text = path.read_text(encoding="utf-8")
+        publish = re.search(r"(?ms)^  publish:\n(.*)", text)
+        self.assertIsNotNone(publish)
+        return text, text[: publish.start()], publish.group(1)
+
+    def test_triggers_only_on_the_language_version_tag(self) -> None:
+        for language, tag, _, _, _ in self.CASES:
+            with self.subTest(language=language):
+                text, _, _ = self.workflow(language)
+                trigger = re.search(r"^on:\n((?:[ #].*\n|\n)*?)^\S", text, re.MULTILINE)
+                self.assertIsNotNone(trigger)
+                lines = [line.strip() for line in trigger.group(1).splitlines() if line.strip() and not line.strip().startswith("#")]
+                self.assertEqual(lines, ["push:", "tags:", f"- '{tag}'"])
+
+    def test_uses_trusted_publishing_without_stored_credentials(self) -> None:
+        for language, _, environment, _, action in self.CASES:
+            with self.subTest(language=language):
+                text, build, publish = self.workflow(language)
+                self.assertRegex(text, r"(?m)^permissions:\n  contents: read\n")
+                self.assertNotIn("secrets.", text)
+                self.assertNotRegex(text, r"API_KEY|GEM_HOST_API_KEY|PYPI_TOKEN|_authToken|password:")
+                self.assertEqual(len(re.findall(r"id-token:\s*write", text)), 1)
+                self.assertRegex(publish, r"(?m)^      id-token: write$")
+                self.assertRegex(publish, r"(?m)^    runs-on: ubuntu-latest$")
+                self.assertRegex(publish, f"(?m)^    environment: {environment}$")
+                self.assertIn(action, publish)
+                self.assertNotRegex(build, r"id-token|gem push|gh-action-pypi-publish")
+                self.assertNotRegex(text, r"(?m)^\s+contents:\s*write")
+
+    def test_publishes_only_the_verified_artifacts(self) -> None:
+        for language, _, _, package, _ in self.CASES:
+            with self.subTest(language=language):
+                text, build, publish = self.workflow(language)
+                self.assertIn(f"scripts/package-readiness.sh --language {language}", build)
+                self.assertIn("does not match", build)
+                self.assertIn("validate-package-manifest.py", publish)
+                self.assertIn(f"{package}", publish)
+                self.assertIn("already exists", publish)
+                self.assertIsNone(re.search(r"npm publish|nuget push|twine upload|mvn\S*\s+deploy|cosign|gpg\s|gh release|git tag|git push", text, re.IGNORECASE))
+
+    def test_the_gem_push_is_the_only_push_and_pypi_uploads_only_distributions(self) -> None:
+        ruby = RUBY_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(len(re.findall(r"gem push", ruby)), 1)
+        self.assertIn('gem push "$GEM"', ruby)
+        python = PYTHON_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("packages-dir: ${{ runner.temp }}/dist", python)
+        self.assertIn('cp "$ARTIFACTS/cekat_event_sdk-$VERSION-py3-none-any.whl" "$ARTIFACTS/cekat_event_sdk-$VERSION.tar.gz" "$RUNNER_TEMP/dist/"', python)
 
 
 if __name__ == "__main__":

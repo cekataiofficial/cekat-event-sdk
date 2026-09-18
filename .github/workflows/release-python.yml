@@ -1,0 +1,108 @@
+name: Release Python package
+
+# Publishes cekat-event-sdk to PyPI when a python/vX.Y.Z tag is pushed. The distributions are built and
+# verified by scripts/package-readiness.sh in the build job, and the separate publish job uploads exactly
+# those distributions, authenticating with PyPI trusted publishing, so no API token is stored. The publish
+# job waits for approval through the "pypi" environment.
+on:
+  push:
+    tags:
+      - 'python/v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-python-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify the distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+      - name: Tag matches the package version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#python/v}"
+          declared="$(python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("python/pyproject.toml").read_text())["project"]["version"])')"
+          if [ "$version" != "$declared" ]; then
+            echo "::error::tag $TAG does not match python/pyproject.toml version $declared"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install the package and its test dependencies
+        working-directory: python
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[test,django,flask,asgi,fastapi]"
+          # scripts/package runs with python3 from PATH.
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Build and validate the distributions
+        run: scripts/package-readiness.sh --language python --output "$RUNNER_TEMP/cekat-artifacts"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pypi-package
+          path: ${{ runner.temp }}/cekat-artifacts/python
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            ci
+            scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: pypi-package
+          path: ${{ runner.temp }}/pypi-package
+      # Only the distributions may reach PyPI, so they are copied out of the artifact directory, which
+      # also holds manifest.json.
+      - name: Verify the downloaded distributions
+        run: |
+          ARTIFACTS="$RUNNER_TEMP/pypi-package"
+          python3 scripts/validate-package-manifest.py "$ARTIFACTS/manifest.json" --language python --version "$VERSION"
+          mkdir -p "$RUNNER_TEMP/dist"
+          cp "$ARTIFACTS/cekat_event_sdk-$VERSION-py3-none-any.whl" "$ARTIFACTS/cekat_event_sdk-$VERSION.tar.gz" "$RUNNER_TEMP/dist/"
+          if curl -sfL -o /dev/null "https://pypi.org/pypi/cekat-event-sdk/$VERSION/json"; then
+            echo "::error::cekat-event-sdk $VERSION already exists on PyPI"
+            exit 1
+          fi
+      - uses: pypa/gh-action-pypi-publish@v1.14.2
+        with:
+          packages-dir: ${{ runner.temp }}/dist
+          print-hash: true
+      - name: Summarize
+        run: |
+          {
+            echo "### Published cekat-event-sdk $VERSION"
+            echo ""
+            echo "https://pypi.org/project/cekat-event-sdk/$VERSION/"
+          } >> "$GITHUB_STEP_SUMMARY"

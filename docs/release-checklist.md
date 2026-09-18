@@ -1,6 +1,6 @@
 # Release checklist
 
-Two workflows release: `.github/workflows/release-node.yml` publishes the npm package when a release owner pushes a `node/vX.Y.Z` tag (see [npm release](#4-npm-release)), and `.github/workflows/release-go.yml` tags and releases the Go modules when a release owner pushes a `go/vX.Y.Z` tag (see [Go release](#5-go-release)). Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
+Four workflows release, each started by a release owner pushing that language's tag: [npm](#4-npm-release) (`node/vX.Y.Z`), [Go](#5-go-release) (`go/vX.Y.Z`), [PyPI](#6-pypi-release) (`python/vX.Y.Z`), and [RubyGems](#7-rubygems-release) (`ruby/vX.Y.Z`). Each one rebuilds and verifies the package with `scripts/package-readiness.sh` before anything leaves the repository, and each waits for approval in its own GitHub environment. Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
 
 Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md).
 
@@ -32,7 +32,7 @@ Complete these outside the workflows; they are not automated:
 - [ ] **License and legal review** of the MIT license and third-party dependencies.
 - [ ] **Changelog and release notes** approved for every SDK.
 - [ ] **Signing**, where a registry requires or you choose it (for example Maven Central artifact signatures), performed by the release owner.
-- [ ] **Credentials or trusted publishing** configured by the release owner; no workflow in this repository holds registry credentials (the npm release uses trusted publishing, described below).
+- [ ] **Credentials or trusted publishing** configured by the release owner; no workflow in this repository holds registry credentials (npm, PyPI, and RubyGems all use trusted publishing, described below).
 - [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.1.0`, `go/middleware/gin/v0.1.0`); pushing the core tag creates the adapter tags. The npm package is tagged `node/v0.1.0`.
 - [ ] **Publication** of exactly the verified artifacts: compare each file's SHA-256 with the release readiness summary before uploading.
 - [ ] **Post-release check.** Install each published package into a clean project and send a test event to a non-production tenant.
@@ -82,4 +82,42 @@ Each release:
    ```sh
    go list -m golang.cekat.ai/event-sdk@v0.1.0 golang.cekat.ai/event-sdk/middleware/gin@v0.1.0
    ```
+
+## 6. PyPI release
+
+`cekat-event-sdk` is released by `.github/workflows/release-python.yml` through [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/), so no API token is stored.
+
+One-time setup:
+
+1. Each release owner needs a PyPI account with two-factor authentication enabled.
+2. In the GitHub repository settings, create an environment named `pypi` with required reviewers, and restrict its deployment tags to `python/v*`.
+3. On PyPI, open your account sidebar, click **Publishing**, and add a **pending publisher** for GitHub Actions: PyPI project name `cekat-event-sdk`, owner `cekataiofficial`, repository `cekat-event-sdk`, workflow filename `release-python.yml`, environment `pypi`. A pending publisher works before the project exists and becomes a normal publisher on the first upload, so no placeholder release is needed. It does not reserve the name, so publish soon after registering it.
+4. Add `python/v*` to the tag ruleset so only release owners can start a release.
+
+Each release:
+
+1. Update `version` in `python/pyproject.toml` and the version constant in `python/scripts/package`, merge, and wait for `CI required`.
+2. Push the tag `python/v<version>` on the release commit.
+3. The `build` job checks the tag against `pyproject.toml` and runs `scripts/package-readiness.sh --language python`, which produces the wheel and sdist with a SHA-256 manifest.
+4. Approve the `publish` job in the `pypi` environment. It revalidates the manifest, copies only the two distributions out of the artifact directory, refuses a version that already exists, and uploads them with attestations.
+5. Check the project page, then install the release into a clean virtual environment as the post-release check.
+
+## 7. RubyGems release
+
+The `cekat-event-sdk` gem is released by `.github/workflows/release-ruby.yml` through [RubyGems trusted publishing](https://guides.rubygems.org/trusted-publishing/), so no API key is stored.
+
+One-time setup:
+
+1. Each release owner needs a RubyGems account with multi-factor authentication enabled.
+2. In the GitHub repository settings, create an environment named `rubygems` with required reviewers, and restrict its deployment tags to `ruby/v*`.
+3. On RubyGems.org, open your profile, go to the pending trusted publisher page, and create one: gem name `cekat-event-sdk`, owner `cekataiofficial`, repository `cekat-event-sdk`, workflow filename `release-ruby.yml`, environment `rubygems`. Like PyPI, this works before the gem exists, so no placeholder push is needed. Once the gem exists, the same settings live under **Trusted publishers** in the gem's sidebar.
+4. Add `ruby/v*` to the tag ruleset so only release owners can start a release.
+
+Each release:
+
+1. Update `CekatEventSdk::VERSION` in `ruby/lib/cekat_event_sdk/version.rb` and the version constant in `ruby/scripts/package`, merge, and wait for `CI required`.
+2. Push the tag `ruby/v<version>` on the release commit.
+3. The `build` job checks the tag against the version constant and runs `scripts/package-readiness.sh --language ruby`, which runs the specs, RuboCop, and the bundle audit, then builds the gem with a SHA-256 manifest.
+4. Approve the `publish` job in the `rubygems` environment. It revalidates the manifest, checks the name and version inside the gem, refuses a version that already exists, exchanges the job's OIDC token for short-lived credentials, and pushes that gem file.
+5. Check the gem page, then install the release into a clean bundle as the post-release check.
 

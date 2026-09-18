@@ -442,7 +442,7 @@ With `--as-of`, it also fails when a supported line has reached end of support o
 
 ## Release readiness
 
-Before a release, run the **Release readiness** workflow (`.github/workflows/release-readiness.yml`, manual trigger only). It builds every SDK with its own `scripts/package` on the current toolchain, validates each `manifest.json` and the complete seven-language set, and keeps the artifacts as workflow artifacts for 14 days, with a summary table of file names, sizes, and SHA-256 hashes. Registry setup, signing, tags, and publication remain release-owner steps; the workflow lists them without performing them. Two languages are automated. Pushing a `node/vX.Y.Z` tag starts `.github/workflows/release-node.yml`, which rebuilds and verifies the Node.js package and, after approval in the `npm` environment, publishes it through npm trusted publishing. Pushing a `go/vX.Y.Z` tag starts `.github/workflows/release-go.yml`, which verifies the commit and every adapter's core requirement, then, after approval in the `go-release` environment, creates the four adapter tags, publishes a GitHub Release per Go module, and warms the public module proxy. Both are described in the [release checklist](docs/release-checklist.md#4-npm-release).
+Before any release, run the **Release readiness** workflow (`.github/workflows/release-readiness.yml`, manual trigger only). It builds every SDK with its own `scripts/package` on the current toolchain, validates each `manifest.json` and the complete seven-language set, and keeps the artifacts for 14 days with a summary table of file names, sizes, and SHA-256 hashes.
 
 Locally (each language's toolchain must be installed):
 
@@ -454,3 +454,18 @@ python3 -m unittest discover -s scripts/tests -p 'test_*.py'                # ro
 ```
 
 `ci/package-manifest.schema.json` documents the manifest format; `scripts/validate-package-manifest.py` enforces it, including the exact file set, sizes, and hashes.
+
+## Releasing
+
+Each release starts the same way: a release owner pushes that language's version tag on a commit that is already on `main` and green. The workflow then rebuilds the package with `scripts/package-readiness.sh`, checks the tag against the version declared in the package metadata, and waits for approval in a GitHub environment before anything leaves the repository. No registry credentials are stored: npm, PyPI, and RubyGems all authenticate with trusted publishing, using a short-lived token issued for that one run.
+
+| Language | Tag | Workflow | Environment | What the approved job does |
+| --- | --- | --- | --- | --- |
+| Go | `go/vX.Y.Z` | `release-go.yml` | `go-release` | Checks that every adapter requires the core version being released, creates the four `go/middleware/*/vX.Y.Z` tags at the same commit, publishes a GitHub Release per module, and asks the public module proxy for each module path. Go has no registry upload: the tags are the release. |
+| Node.js | `node/vX.Y.Z` | `release-node.yml` | `npm` | Verifies the tarball's name, version, and hashes, then publishes it to npm with provenance. |
+| Python | `python/vX.Y.Z` | `release-python.yml` | `pypi` | Verifies the manifest, then uploads the wheel and sdist to PyPI with attestations. |
+| Ruby | `ruby/vX.Y.Z` | `release-ruby.yml` | `rubygems` | Verifies the manifest and the name and version inside the gem, then pushes that gem file to RubyGems. |
+
+Every one of these refuses a version that already exists in the registry, so a re-run cannot overwrite a release.
+
+PHP (Packagist), Java (Maven Central), and .NET (NuGet) have no release workflow yet. For those, the release owner publishes the artifacts that release readiness built and verified, and performs any signing the registry requires. The [release checklist](docs/release-checklist.md) covers the registry setup for each language, the per-release steps, and the gates that stay manual for all seven.
