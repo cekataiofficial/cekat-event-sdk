@@ -173,4 +173,4 @@ CekatClient client = new CekatClient(token, CekatClientOptions.builder()
 ./scripts/package --version 0.1.0 --output /absolute/empty-directory
 ```
 
-`scripts/package` runs the full build and writes the parent POM plus each module's POM, jar, sources jar, and Javadoc jar in Maven repository layout with a SHA-256 `manifest.json`. It never deploys, signs, tags, or pushes. `scripts/conformance` runs the shared conformance fixtures, including the three caller-cancellation cases; see `conformance/README.md`.
+`scripts/package` runs the full build and writes the parent POM plus each module's POM, jar, sources jar, and Javadoc jar in Maven repository layout with a SHA-256 `manifest.json`. It never deploys, signs, tags, or pushes. Releases run from the repository's `release-java.yml` workflow when a `java/vX.Y.Z` tag is pushed: it signs and uploads those artifacts to the Sonatype Portal and stops at `VALIDATED`, leaving the final Publish to a release owner. See the root release checklist. `scripts/conformance` runs the shared conformance fixtures, including the three caller-cancellation cases; see `conformance/README.md`.

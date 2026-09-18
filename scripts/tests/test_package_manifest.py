@@ -27,6 +27,8 @@ NODE_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-node.yml"
 GO_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-go.yml"
 PYTHON_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-python.yml"
 RUBY_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-ruby.yml"
+JAVA_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-java.yml"
+PHP_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-php.yml"
 SCHEMA = ROOT / "ci" / "package-manifest.schema.json"
 LANGUAGES = ("go", "node", "python", "php", "java", "dotnet", "ruby")
 
@@ -433,7 +435,7 @@ class NoPublishTest(unittest.TestCase):
 
     def test_only_the_release_workflows_publish(self) -> None:
         workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
-        releases = {NODE_RELEASE_WORKFLOW, GO_RELEASE_WORKFLOW, PYTHON_RELEASE_WORKFLOW, RUBY_RELEASE_WORKFLOW}
+        releases = {NODE_RELEASE_WORKFLOW, GO_RELEASE_WORKFLOW, PYTHON_RELEASE_WORKFLOW, RUBY_RELEASE_WORKFLOW, JAVA_RELEASE_WORKFLOW, PHP_RELEASE_WORKFLOW}
         self.assertTrue(releases.issubset(set(workflows)))
         for path in workflows:
             if path in releases:
@@ -587,6 +589,85 @@ class RegistryReleaseWorkflowTest(unittest.TestCase):
         python = PYTHON_RELEASE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("packages-dir: ${{ runner.temp }}/dist", python)
         self.assertIn('cp "$ARTIFACTS/cekat_event_sdk-$VERSION-py3-none-any.whl" "$ARTIFACTS/cekat_event_sdk-$VERSION.tar.gz" "$RUNNER_TEMP/dist/"', python)
+
+
+
+class SecretHoldingReleaseWorkflowTest(unittest.TestCase):
+    """Maven Central and Packagist have no trusted publishing, so these two workflows hold secrets.
+
+    The secrets must stay in the approved publish job, name only what that registry needs, and act only on
+    artifacts the build job verified.
+    """
+
+    WORKFLOWS = {"java": JAVA_RELEASE_WORKFLOW, "php": PHP_RELEASE_WORKFLOW}
+    SECRETS = {
+        "java": {"GPG_PRIVATE_KEY", "GPG_PASSPHRASE", "MAVEN_CENTRAL_USERNAME", "MAVEN_CENTRAL_PASSWORD"},
+        "php": {"PHP_MIRROR_TOKEN"},
+    }
+    ENVIRONMENTS = {"java": "maven-central", "php": "packagist"}
+    TAGS = {"java": "java/v*", "php": "php/v*"}
+
+    def parts(self, language: str) -> tuple[str, str, str]:
+        text = self.WORKFLOWS[language].read_text(encoding="utf-8")
+        publish = re.search(r"(?ms)^  publish:\n(.*)", text)
+        self.assertIsNotNone(publish)
+        return text, text[: publish.start()], publish.group(1)
+
+    def test_triggers_only_on_the_language_version_tag(self) -> None:
+        for language, tag in self.TAGS.items():
+            with self.subTest(language=language):
+                text, _, _ = self.parts(language)
+                trigger = re.search(r"^on:\n((?:[ #].*\n|\n)*?)^\S", text, re.MULTILINE)
+                self.assertIsNotNone(trigger)
+                lines = [line.strip() for line in trigger.group(1).splitlines() if line.strip() and not line.strip().startswith("#")]
+                self.assertEqual(lines, ["push:", "tags:", f"- '{tag}'"])
+
+    def test_secrets_are_named_and_confined_to_the_approved_publish_job(self) -> None:
+        for language, expected in self.SECRETS.items():
+            with self.subTest(language=language):
+                text, build, publish = self.parts(language)
+                self.assertRegex(text, r"(?m)^permissions:\n  contents: read\n")
+                self.assertEqual(set(re.findall(r"secrets\.([A-Z_]+)", text)), expected)
+                self.assertNotIn("secrets.", build)
+                self.assertRegex(publish, f"(?m)^    environment: {self.ENVIRONMENTS[language]}$")
+                self.assertNotRegex(text, r"(?m)^\s+(?:contents|packages|id-token):\s*write")
+
+    def test_the_build_job_verifies_the_tag_and_the_package(self) -> None:
+        for language in self.WORKFLOWS:
+            with self.subTest(language=language):
+                _, build, _ = self.parts(language)
+                self.assertIn(f"scripts/package-readiness.sh --language {language}", build)
+                self.assertIn("does not match", build)
+
+    def test_each_registry_receives_what_the_build_job_checked(self) -> None:
+        # Maven Central takes the artifact tree the build job hashed; Packagist consumes Git history, so the
+        # mirror is taken from the same tagged commit instead of an uploaded archive.
+        _, _, java = self.parts("java")
+        self.assertIn("actions/download-artifact@", java)
+        _, _, php = self.parts("php")
+        self.assertIn('rsync --archive --delete --exclude .git "$GITHUB_WORKSPACE/php/" .', php)
+        self.assertNotIn("actions/download-artifact@", php)
+
+    def test_maven_central_signs_the_verified_tree_and_stops_before_publishing(self) -> None:
+        text, _, publish = self.parts("java")
+        validate = publish.index("validate-package-manifest.py")
+        self.assertLess(validate, publish.index("--detach-sign"), "artifacts are signed before being verified")
+        self.assertLess(validate, publish.index("publisher/upload"), "artifacts are uploaded before being verified")
+        self.assertIn("publishingType=USER_MANAGED", publish)
+        self.assertNotIn("AUTOMATIC", text)
+        self.assertIn("::add-mask::", publish)
+        self.assertIn("--exclude=manifest.json", publish)
+        for suffix in (".asc", ".md5", ".sha1"):
+            self.assertIn(suffix, publish)
+
+    def test_the_php_mirror_is_the_only_push_target(self) -> None:
+        text, _, publish = self.parts("php")
+        self.assertRegex(text, r"(?m)^  MIRROR: cekataiofficial/cekat-event-sdk-php$")
+        pushes = re.findall(r"git push[^\n]*", publish)
+        self.assertEqual(pushes, ['git push --quiet origin HEAD:main', 'git push --quiet origin "refs/tags/v$VERSION"'])
+        self.assertLess(publish.index("compare/main..."), publish.index("git push"), "the mirror is pushed before the commit is checked")
+        self.assertIn('git ls-remote --tags --exit-code origin "refs/tags/v$VERSION"', publish)
+        self.assertIn('git tag "v$VERSION"', publish)
 
 
 if __name__ == "__main__":

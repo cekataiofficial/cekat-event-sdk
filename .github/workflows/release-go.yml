@@ -4,8 +4,9 @@ name: Release Go modules
 # tags are the release, so this workflow verifies the commit, creates the four adapter tags at the same
 # commit, publishes a GitHub Release for each module with the archives built by go/scripts/package, and
 # asks the public module proxy for each module path so pkg.go.dev indexes it. It holds no secrets; the
-# tag-creating job waits for approval through the "go-release" environment. The repository's tag ruleset
-# must allow the GitHub Actions token to create go/middleware/*/v* tags.
+# tag-creating job waits for approval through the "go-release" environment. A tag ruleset may restrict
+# go/v*, which a release owner pushes, but must not restrict go/middleware/**: the Actions token cannot be
+# given a ruleset bypass, so restricting those would stop this job from creating the adapter tags.
 on:
   push:
     tags:

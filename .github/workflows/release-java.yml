@@ -1,0 +1,145 @@
+name: Release Java artifacts
+
+# Publishes the ai.cekat artifacts to Maven Central when a java/vX.Y.Z tag is pushed. Maven Central has no
+# trusted publishing, so the publish job reads a Portal user token and a signing key from the
+# "maven-central" environment, which requires approval. It signs and uploads exactly the artifact tree the
+# build job verified, and stops at VALIDATED: a release owner presses Publish in the Portal, because a
+# published Maven Central version can never be replaced or removed.
+on:
+  push:
+    tags:
+      - 'java/v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-java-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify the artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: java/**/pom.xml
+      - name: Tag matches the project version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#java/v}"
+          declared="$(java/mvnw -q -f java/pom.xml help:evaluate -Dexpression=project.version -DforceStdout)"
+          if [ "$version" != "$declared" ]; then
+            echo "::error::tag $TAG does not match the java/pom.xml version $declared"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build and validate the artifacts
+        run: scripts/package-readiness.sh --language java --output "$RUNNER_TEMP/cekat-artifacts"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: maven-artifacts
+          path: ${{ runner.temp }}/cekat-artifacts/java
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Sign and upload to Maven Central
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: maven-central
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            ci
+            scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: maven-artifacts
+          path: ${{ runner.temp }}/maven-artifacts
+      - name: Verify the downloaded artifacts
+        run: |
+          python3 scripts/validate-package-manifest.py "$RUNNER_TEMP/maven-artifacts/manifest.json" --language java --version "$VERSION"
+          for artifact in cekat-event-sdk-core cekat-event-sdk-jakarta-servlet cekat-event-sdk-spring-boot; do
+            directory="$RUNNER_TEMP/maven-artifacts/ai/cekat/$artifact/$VERSION"
+            for suffix in .jar -sources.jar -javadoc.jar .pom; do
+              test -f "$directory/$artifact-$VERSION$suffix"
+            done
+          done
+          test -f "$RUNNER_TEMP/maven-artifacts/ai/cekat/cekat-event-sdk-parent/$VERSION/cekat-event-sdk-parent-$VERSION.pom"
+      # Central requires a .asc signature and .md5/.sha1 checksums beside every deployed file. The bundle is
+      # staged from the verified tree without manifest.json, which belongs to this repository, not to Central.
+      - name: Sign and assemble the Central bundle
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          staging="$RUNNER_TEMP/bundle"
+          mkdir -p "$staging"
+          (cd "$RUNNER_TEMP/maven-artifacts" && tar --exclude=manifest.json -cf - ai) | tar -xf - -C "$staging"
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          find "$staging" -type f | while read -r file; do
+            gpg --batch --quiet --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --detach-sign --armor --output "$file.asc" "$file"
+            md5sum "$file" | cut -d' ' -f1 > "$file.md5"
+            sha1sum "$file" | cut -d' ' -f1 > "$file.sha1"
+          done
+          (cd "$staging" && zip -qr "$RUNNER_TEMP/central-bundle.zip" ai)
+          unzip -l "$RUNNER_TEMP/central-bundle.zip"
+      - name: Upload the bundle and wait for validation
+        env:
+          CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: |
+          token="$(printf '%s:%s' "$CENTRAL_USERNAME" "$CENTRAL_PASSWORD" | base64 -w0)"
+          echo "::add-mask::$token"
+          deployment="$(curl --fail-with-body --no-progress-meter -X POST \
+            --header "Authorization: Bearer $token" \
+            --form "bundle=@$RUNNER_TEMP/central-bundle.zip" \
+            "https://central.sonatype.com/api/v1/publisher/upload?name=ai.cekat+$VERSION&publishingType=USER_MANAGED")"
+          echo "deployment: $deployment"
+          for _ in $(seq 1 60); do
+            status="$(curl --fail-with-body --no-progress-meter -X POST \
+              --header "Authorization: Bearer $token" \
+              "https://central.sonatype.com/api/v1/publisher/status?id=$deployment")"
+            state="$(printf '%s' "$status" | jq -r '.deploymentState')"
+            echo "state: $state"
+            case "$state" in
+              VALIDATED|PUBLISHED) break ;;
+              FAILED)
+                printf '%s' "$status" | jq -r '.errors'
+                echo "::error::Central rejected deployment $deployment"
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          if [ "$state" != "VALIDATED" ] && [ "$state" != "PUBLISHED" ]; then
+            echo "::error::deployment $deployment is still $state after 10 minutes"
+            exit 1
+          fi
+          {
+            echo "### Java $VERSION uploaded to Maven Central"
+            echo ""
+            echo "Deployment \`$deployment\` is **$state**. Nothing is public yet."
+            echo ""
+            echo "A release owner must press Publish at https://central.sonatype.com/publishing/deployments to release it."
+          } >> "$GITHUB_STEP_SUMMARY"

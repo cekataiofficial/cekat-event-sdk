@@ -465,7 +465,9 @@ Each release starts the same way: a release owner pushes that language's version
 | Node.js | `node/vX.Y.Z` | `release-node.yml` | `npm` | Verifies the tarball's name, version, and hashes, then publishes it to npm with provenance. |
 | Python | `python/vX.Y.Z` | `release-python.yml` | `pypi` | Verifies the manifest, then uploads the wheel and sdist to PyPI with attestations. |
 | Ruby | `ruby/vX.Y.Z` | `release-ruby.yml` | `rubygems` | Verifies the manifest and the name and version inside the gem, then pushes that gem file to RubyGems. |
+| Java | `java/vX.Y.Z` | `release-java.yml` | `maven-central` | Verifies the manifest, signs every file with the release key, adds checksums, and uploads the bundle to the Sonatype Portal. It stops at `VALIDATED`: a release owner presses Publish, because a Maven Central version can never be replaced. |
+| PHP | `php/vX.Y.Z` | `release-php.yml` | `packagist` | Mirrors this tag's `php/` directory to `cekataiofficial/cekat-event-sdk-php`, where `composer.json` sits at the repository root, and tags it `vX.Y.Z` for Packagist to read. |
 
-Every one of these refuses a version that already exists in the registry, so a re-run cannot overwrite a release.
+Every one of these refuses a version that already exists in the registry, so a re-run cannot overwrite a release. npm, PyPI, and RubyGems authenticate with trusted publishing and store no credentials; Maven Central and Packagist offer none, so those two workflows read secrets from their own approval-gated environments.
 
-PHP (Packagist), Java (Maven Central), and .NET (NuGet) have no release workflow yet. For those, the release owner publishes the artifacts that release readiness built and verified, and performs any signing the registry requires. The [release checklist](docs/release-checklist.md) covers the registry setup for each language, the per-release steps, and the gates that stay manual for all seven.
+.NET (NuGet) has no release workflow yet: the release owner publishes the packages that release readiness built and verified. The [release checklist](docs/release-checklist.md) covers the registry setup for each language, the per-release steps, and the gates that stay manual for all seven.

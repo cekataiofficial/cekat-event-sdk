@@ -11,6 +11,12 @@
         "laravel",
         "symfony"
     ],
+    "homepage": "https://github.com/cekataiofficial/cekat-event-sdk/tree/main/php#readme",
+    "support": {
+        "issues": "https://github.com/cekataiofficial/cekat-event-sdk/issues",
+        "source": "https://github.com/cekataiofficial/cekat-event-sdk/tree/main/php",
+        "docs": "https://github.com/cekataiofficial/cekat-event-sdk/blob/main/php/README.md"
+    },
     "require": {
         "php": "^8.2",
         "ext-json": "*",
