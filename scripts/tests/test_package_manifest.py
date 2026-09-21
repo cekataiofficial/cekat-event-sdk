@@ -29,6 +29,7 @@ PYTHON_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-python.yml"
 RUBY_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-ruby.yml"
 JAVA_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-java.yml"
 PHP_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-php.yml"
+DOTNET_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release-dotnet.yml"
 SCHEMA = ROOT / "ci" / "package-manifest.schema.json"
 LANGUAGES = ("go", "node", "python", "php", "java", "dotnet", "ruby")
 
@@ -435,7 +436,7 @@ class NoPublishTest(unittest.TestCase):
 
     def test_only_the_release_workflows_publish(self) -> None:
         workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
-        releases = {NODE_RELEASE_WORKFLOW, GO_RELEASE_WORKFLOW, PYTHON_RELEASE_WORKFLOW, RUBY_RELEASE_WORKFLOW, JAVA_RELEASE_WORKFLOW, PHP_RELEASE_WORKFLOW}
+        releases = {NODE_RELEASE_WORKFLOW, GO_RELEASE_WORKFLOW, PYTHON_RELEASE_WORKFLOW, RUBY_RELEASE_WORKFLOW, JAVA_RELEASE_WORKFLOW, PHP_RELEASE_WORKFLOW, DOTNET_RELEASE_WORKFLOW}
         self.assertTrue(releases.issubset(set(workflows)))
         for path in workflows:
             if path in releases:
@@ -538,10 +539,14 @@ class RegistryReleaseWorkflowTest(unittest.TestCase):
     CASES = (
         ("python", "python/v*", "pypi", "cekat-event-sdk", "pypa/gh-action-pypi-publish@"),
         ("ruby", "ruby/v*", "rubygems", "cekat-event-sdk", "rubygems/configure-rubygems-credentials@"),
+        ("dotnet", "dotnet/v*", "nuget", "Cekat.EventSdk", "NuGet/login@"),
     )
+    # Each workflow may run its own registry's upload command and no other.
+    UPLOADS = {"python": "twine upload", "ruby": "gem push", "dotnet": "nuget push"}
+    PATHS = {"python": PYTHON_RELEASE_WORKFLOW, "ruby": RUBY_RELEASE_WORKFLOW, "dotnet": DOTNET_RELEASE_WORKFLOW}
 
     def workflow(self, language: str) -> tuple[str, str, str]:
-        path = PYTHON_RELEASE_WORKFLOW if language == "python" else RUBY_RELEASE_WORKFLOW
+        path = self.PATHS[language]
         text = path.read_text(encoding="utf-8")
         publish = re.search(r"(?ms)^  publish:\n(.*)", text)
         self.assertIsNotNone(publish)
@@ -562,7 +567,10 @@ class RegistryReleaseWorkflowTest(unittest.TestCase):
                 text, build, publish = self.workflow(language)
                 self.assertRegex(text, r"(?m)^permissions:\n  contents: read\n")
                 self.assertNotIn("secrets.", text)
-                self.assertNotRegex(text, r"API_KEY|GEM_HOST_API_KEY|PYPI_TOKEN|_authToken|password:")
+                # A key may only come from the trusted-publishing exchange, never from a stored credential.
+                self.assertNotRegex(text, r"secrets\.|GEM_HOST_API_KEY|PYPI_TOKEN|_authToken|password:")
+                for line in re.findall(r"^.*API_KEY.*$", text, re.MULTILINE):
+                    self.assertNotIn("secrets.", line)
                 self.assertEqual(len(re.findall(r"id-token:\s*write", text)), 1)
                 self.assertRegex(publish, r"(?m)^      id-token: write$")
                 self.assertRegex(publish, r"(?m)^    runs-on: ubuntu-latest$")
@@ -580,7 +588,20 @@ class RegistryReleaseWorkflowTest(unittest.TestCase):
                 self.assertIn("validate-package-manifest.py", publish)
                 self.assertIn(f"{package}", publish)
                 self.assertIn("already exists", publish)
-                self.assertIsNone(re.search(r"npm publish|nuget push|twine upload|mvn\S*\s+deploy|cosign|gpg\s|gh release|git tag|git push", text, re.IGNORECASE))
+                forbidden = ["npm publish", "mvn deploy", "cosign", "gpg ", "gh release", "git tag", "git push"]
+                forbidden += [command for other, command in self.UPLOADS.items() if other != language]
+                for command in forbidden:
+                    self.assertNotIn(command, text.lower() if command.islower() else text)
+
+    def test_nuget_requests_its_key_immediately_before_pushing(self) -> None:
+        text, build, publish = self.workflow("dotnet")
+        self.assertNotIn("secrets.", text)
+        self.assertIn("user: ${{ vars.NUGET_USER }}", publish)
+        self.assertIn("NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}", publish)
+        self.assertLess(publish.index("NuGet/login@"), publish.index("dotnet nuget push"))
+        self.assertLess(publish.index("validate-package-manifest.py"), publish.index("NuGet/login@"))
+        self.assertNotIn("--skip-duplicate", publish)
+        self.assertNotIn("NuGet/login@", build)
 
     def test_the_gem_push_is_the_only_push_and_pypi_uploads_only_distributions(self) -> None:
         ruby = RUBY_RELEASE_WORKFLOW.read_text(encoding="utf-8")

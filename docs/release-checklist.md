@@ -1,6 +1,6 @@
 # Release checklist
 
-Six workflows release, each started by a release owner pushing that language's tag: [npm](#4-npm-release) (`node/vX.Y.Z`), [Go](#5-go-release) (`go/vX.Y.Z`), [PyPI](#6-pypi-release) (`python/vX.Y.Z`), [RubyGems](#7-rubygems-release) (`ruby/vX.Y.Z`), [Maven Central](#8-maven-central-release) (`java/vX.Y.Z`), and [Packagist](#9-packagist-release) (`php/vX.Y.Z`). Each one rebuilds and verifies the package with `scripts/package-readiness.sh` before anything leaves the repository, and each waits for approval in its own GitHub environment. Only NuGet (.NET) is still published by hand. Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
+Every language releases from a workflow, each started by a release owner pushing that language's tag: [npm](#4-npm-release) (`node/vX.Y.Z`), [Go](#5-go-release) (`go/vX.Y.Z`), [PyPI](#6-pypi-release) (`python/vX.Y.Z`), [RubyGems](#7-rubygems-release) (`ruby/vX.Y.Z`), [Maven Central](#8-maven-central-release) (`java/vX.Y.Z`), [Packagist](#9-packagist-release) (`php/vX.Y.Z`), and [NuGet](#10-nuget-release) (`dotnet/vX.Y.Z`). Each one rebuilds and verifies the package with `scripts/package-readiness.sh` before anything leaves the repository, and each waits for approval in its own GitHub environment. Neither `.github/workflows/ci.yml` nor `.github/workflows/release-readiness.yml` publishes, signs, tags, or creates a release, and every `scripts/package` never publishes. Publication of the other SDKs and any signing are manual steps for the release owner, using artifacts that release readiness has built and verified.
 
 Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md).
 
@@ -32,7 +32,7 @@ Complete these outside the workflows; they are not automated:
 - [ ] **License and legal review** of the MIT license and third-party dependencies.
 - [ ] **Changelog and release notes** approved for every SDK.
 - [ ] **Signing**, where a registry requires or you choose it. Maven Central requires a `.asc` signature beside every file; `release-java.yml` signs with the key in the `maven-central` environment.
-- [ ] **Credentials or trusted publishing** configured by the release owner. npm, PyPI, and RubyGems use trusted publishing and store nothing. Maven Central and Packagist have no trusted publishing, so `release-java.yml` and `release-php.yml` read secrets from their own approval-gated environments; no other workflow may hold credentials.
+- [ ] **Credentials or trusted publishing** configured by the release owner. npm, PyPI, RubyGems, and NuGet use trusted publishing and store nothing. Maven Central and Packagist have no trusted publishing, so `release-java.yml` and `release-php.yml` read secrets from their own approval-gated environments; no other workflow may hold credentials.
 - [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.1.0`, `go/middleware/gin/v0.1.0`); pushing the core tag creates the adapter tags. The npm package is tagged `node/v0.1.0`.
 - [ ] **Publication** of exactly the verified artifacts: compare each file's SHA-256 with the release readiness summary before uploading.
 - [ ] **Post-release check.** Install each published package into a clean project and send a test event to a non-production tenant.
@@ -153,7 +153,7 @@ One-time setup:
 1. Create the public repository `cekataiofficial/cekat-event-sdk-php`, empty, with a `main` branch. Its description should say it is generated from this repository.
 2. Generate a dedicated SSH key pair (`ssh-keygen -t ed25519 -C "cekat-event-sdk-php mirror" -f mirror-key -N ""`) and add the public half to the mirror under **Settings → Deploy keys** with **Allow write access**. A deploy key belongs to the mirror repository, so releases do not depend on any person's account, it never expires, and it cannot reach another repository.
 3. In this repository's settings, create an environment named `packagist` with required reviewers, restrict its deployment tags to `php/v*`, and add the private half as the environment secret `PHP_MIRROR_DEPLOY_KEY`. Delete the local copy of the private key afterwards, keeping a backup only in your password manager.
-4. The mirror must be **public**: Packagist indexes only public repositories. Once it has content, submit `https://github.com/cekataiofficial/cekat-event-sdk-php` on Packagist, which claims the `cekat` vendor name, then install the Packagist GitHub App on the mirror so new tags sync immediately. Submitting before the first release tag means the workflow's Packagist check passes on the first run; until the package is registered, that step only warns.
+4. The mirror must be **public**: Packagist indexes only public repositories. Once it has content, submit `https://github.com/cekataiofficial/cekat-event-sdk-php` on Packagist, which claims the `cekat` vendor name. Then enable automatic updates with a push webhook on the mirror (payload URL `https://packagist.org/api/github?username=<packagist-user>`, content type `application/json`, secret = your Packagist API token, push events only). The webhook keeps the integration scoped to the mirror; Packagist's OAuth integration is the alternative, but it authorizes the whole GitHub organization and cannot be limited to one repository. Submitting before the first release tag means the workflow's Packagist check passes on the first run; until the package is registered, that step only warns.
 5. Add `php/v*` to the tag ruleset.
 
 Each release:
@@ -163,4 +163,24 @@ Each release:
 3. The `build` job checks the tag against that constant and runs `scripts/package-readiness.sh --language php`, which runs the tests, PHPStan, the coding-standard check, and `composer archive`.
 4. Approve the `publish` job in the `packagist` environment. It confirms the tagged commit is on `main`, refuses a tag the mirror already has, replaces the mirror's contents with this tag's `php/` directory, commits, pushes, tags `v<version>`, and then waits for Packagist to list the version. If Packagist has not picked it up, the job warns instead of failing; check the GitHub App hook on the mirror.
 5. Post-release check: `composer require cekat/event-sdk` in a clean project.
+
+## 10. NuGet release
+
+The three `Cekat.EventSdk` packages are released by `.github/workflows/release-dotnet.yml` through [NuGet trusted publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing), so no API key is stored. nuget.org issues a key that is valid for one hour, and the workflow requests it immediately before pushing.
+
+One-time setup:
+
+1. Each release owner needs a nuget.org account with two-factor authentication. Note the **profile name**, not the email address: that is what the login step sends.
+2. In the GitHub repository settings, create an environment named `nuget` with required reviewers, and restrict its deployment tags to `dotnet/v*`.
+3. Add a repository **variable** (not a secret) named `NUGET_USER` with that profile name, under Settings, Secrets and variables, Actions, Variables.
+4. On nuget.org, open your username menu, choose **Trusted Publishing**, and add a policy: owner (you or the Cekat organization), Repository Owner `cekataiofficial`, Repository `cekat-event-sdk`, Workflow File `release-dotnet.yml` (file name only), Environment `nuget`. Set the policy scopes to allow publishing new packages and new versions, with a glob such as `Cekat.EventSdk*`. A new policy may start **temporarily active for 7 days** until a first successful publish records the repository and owner IDs, so publish within that window or restart it.
+5. Add `dotnet/v*` to the tag ruleset.
+
+Each release:
+
+1. Update `<Version>` in `dotnet/Directory.Build.props` and the version constant in `dotnet/scripts/package`, merge, and wait for `CI required`.
+2. Push the tag `dotnet/v<version>` on the release commit.
+3. The `build` job checks the tag against `Directory.Build.props` and runs `scripts/package-readiness.sh --language dotnet`, which tests on the current framework, fails on vulnerable dependencies, and packs the three `.nupkg` files with a SHA-256 manifest.
+4. Approve the `publish` job in the `nuget` environment. It revalidates the manifest, refuses any package version that already exists, exchanges the OIDC token for a one-hour key, and pushes the three packages.
+5. nuget.org validates and indexes each package, usually within a few minutes. Post-release check: `dotnet add package Cekat.EventSdk --version <version>` in a clean project.
 

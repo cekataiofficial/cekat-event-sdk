@@ -467,7 +467,8 @@ Each release starts the same way: a release owner pushes that language's version
 | Ruby | `ruby/vX.Y.Z` | `release-ruby.yml` | `rubygems` | Verifies the manifest and the name and version inside the gem, then pushes that gem file to RubyGems. |
 | Java | `java/vX.Y.Z` | `release-java.yml` | `maven-central` | Verifies the manifest, signs every file with the release key, adds checksums, and uploads the bundle to the Sonatype Portal. It stops at `VALIDATED`: a release owner presses Publish, because a Maven Central version can never be replaced. |
 | PHP | `php/vX.Y.Z` | `release-php.yml` | `packagist` | Mirrors this tag's `php/` directory to `cekataiofficial/cekat-event-sdk-php`, where `composer.json` sits at the repository root, and tags it `vX.Y.Z` for Packagist to read. |
+| .NET | `dotnet/vX.Y.Z` | `release-dotnet.yml` | `nuget` | Verifies the manifest, exchanges the job's OIDC token for a one-hour key, and pushes the three `Cekat.EventSdk` packages to nuget.org. |
 
-Every one of these refuses a version that already exists in the registry, so a re-run cannot overwrite a release. npm, PyPI, and RubyGems authenticate with trusted publishing and store no credentials; Maven Central and Packagist offer none, so those two workflows read secrets from their own approval-gated environments.
+Every one of these refuses a version that already exists in the registry, so a re-run cannot overwrite a release. npm, PyPI, RubyGems, and NuGet authenticate with trusted publishing and store no credentials; Maven Central and Packagist offer none, so those two workflows read secrets from their own approval-gated environments.
 
-.NET (NuGet) has no release workflow yet: the release owner publishes the packages that release readiness built and verified. The [release checklist](docs/release-checklist.md) covers the registry setup for each language, the per-release steps, and the gates that stay manual for all seven.
+The [release checklist](docs/release-checklist.md) covers the registry setup for each language, the per-release steps, and the gates that stay manual, such as changelog approval and the final Publish click for Maven Central.

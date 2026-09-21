@@ -1,0 +1,132 @@
+name: Release .NET packages
+
+# Publishes the Cekat.EventSdk packages to nuget.org when a dotnet/vX.Y.Z tag is pushed. The packages are
+# built and verified by scripts/package-readiness.sh in the build job, and the separate publish job pushes
+# exactly those .nupkg files. No API key is stored: NuGet/login exchanges the job's OIDC token for a key
+# that is valid for one hour, requested immediately before the push. The publish job waits for approval
+# through the "nuget" environment. The nuget.org profile name is the repository variable NUGET_USER.
+on:
+  push:
+    tags:
+      - 'dotnet/v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-dotnet-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  build:
+    name: Build and verify the packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      TEST_TARGET_FRAMEWORK: net10.0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: 10.0.x
+      - name: Tag matches the package version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#dotnet/v}"
+          declared="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' dotnet/Directory.Build.props)"
+          if [ "$version" != "$declared" ]; then
+            echo "::error::tag $TAG does not match the dotnet/Directory.Build.props version $declared"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Select the 10.0 SDK
+        working-directory: dotnet
+        run: |
+          sdk="$(dotnet --list-sdks | awk '/^10\.0\./ {v=$1} END {print v}')"
+          jq --arg version "$sdk" '.sdk = {version: $version, rollForward: "latestPatch"}' global.json > global.json.tmp
+          mv global.json.tmp global.json
+          dotnet --version
+      - name: Build and validate the packages
+        run: scripts/package-readiness.sh --language dotnet --output "$RUNNER_TEMP/cekat-artifacts"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nuget-packages
+          path: ${{ runner.temp }}/cekat-artifacts/dotnet
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to NuGet
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            ci
+            scripts
+      - uses: actions/setup-dotnet@v6
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuget-packages
+          path: ${{ runner.temp }}/nuget-packages
+      - name: Verify the downloaded packages
+        run: |
+          ARTIFACTS="$RUNNER_TEMP/nuget-packages"
+          python3 scripts/validate-package-manifest.py "$ARTIFACTS/manifest.json" --language dotnet --version "$VERSION"
+          for package in Cekat.EventSdk Cekat.EventSdk.AspNetCore Cekat.EventSdk.AzureFunctions; do
+            test -f "$ARTIFACTS/$package.$VERSION.nupkg"
+            identifier="$(printf '%s' "$package" | tr '[:upper:]' '[:lower:]')"
+            if curl --no-progress-meter -fL "https://api.nuget.org/v3-flatcontainer/$identifier/index.json" \
+              | jq -e --arg version "$VERSION" '.versions | index($version)' >/dev/null 2>&1; then
+              echo "::error::$package $VERSION already exists on nuget.org"
+              exit 1
+            fi
+          done
+      # A temporary key is valid for one hour, so it is requested immediately before the push.
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Push the verified packages
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          ARTIFACTS="$RUNNER_TEMP/nuget-packages"
+          for package in Cekat.EventSdk Cekat.EventSdk.AspNetCore Cekat.EventSdk.AzureFunctions; do
+            dotnet nuget push "$ARTIFACTS/$package.$VERSION.nupkg" \
+              --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
+          done
+          {
+            echo "### Published Cekat.EventSdk $VERSION"
+            echo ""
+            echo "- https://www.nuget.org/packages/Cekat.EventSdk/$VERSION"
+            echo "- https://www.nuget.org/packages/Cekat.EventSdk.AspNetCore/$VERSION"
+            echo "- https://www.nuget.org/packages/Cekat.EventSdk.AzureFunctions/$VERSION"
+            echo ""
+            echo "nuget.org validates and indexes new packages, which usually takes a few minutes."
+          } >> "$GITHUB_STEP_SUMMARY"
