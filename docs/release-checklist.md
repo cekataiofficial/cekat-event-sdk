@@ -22,7 +22,7 @@ Related pages: [compatibility](compatibility.md), [SDK contract](sdk-contract.md
 1. Merge the release changes so `CI required` is green on the release commit.
 2. Run the **Release readiness** workflow (`release-readiness.yml`) on that commit. It runs every language's `scripts/package` on the current toolchain, validates each `manifest.json` and the complete seven-language set with `scripts/validate-package-manifest.py`, and keeps the artifacts for 14 days.
 3. Review the run summary: the artifact names, sizes, and SHA-256 hashes, and the compatibility table.
-4. Download the `cekat-event-sdk-0.1.0-<language>` artifacts you will publish and keep the hashes with the release record.
+4. Download the `cekat-event-sdk-0.2.0-<language>` artifacts you will publish and keep the hashes with the release record.
 
 ## 3. Manual release gates
 
@@ -33,7 +33,7 @@ Complete these outside the workflows; they are not automated:
 - [ ] **Changelog and release notes** approved for every SDK.
 - [ ] **Signing**, where a registry requires or you choose it. Maven Central requires a `.asc` signature beside every file; `release-java.yml` signs with the key in the `maven-central` environment.
 - [ ] **Credentials or trusted publishing** configured by the release owner. npm, PyPI, RubyGems, and NuGet use trusted publishing and store nothing. Maven Central and Packagist have no trusted publishing, so `release-java.yml` and `release-php.yml` read secrets from their own approval-gated environments; no other workflow may hold credentials.
-- [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.1.0`, `go/middleware/gin/v0.1.0`); pushing the core tag creates the adapter tags. The npm package is tagged `node/v0.1.0`.
+- [ ] **Tags.** Go modules are tagged with their full directory path (`go/v0.2.0`, `go/middleware/gin/v0.2.0`); pushing the core tag creates the adapter tags. The npm package is tagged `node/v0.2.0`.
 - [ ] **Publication** of exactly the verified artifacts: compare each file's SHA-256 with the release readiness summary before uploading.
 - [ ] **Post-release check.** Install each published package into a clean project and send a test event to a non-production tenant.
 
@@ -72,7 +72,7 @@ Each release:
 2. Merge, wait for `CI required`, then push the core tag on the release commit:
 
    ```sh
-   git fetch origin && git tag go/v0.1.0 origin/main && git push origin go/v0.1.0
+   git fetch origin && git tag go/v0.2.0 origin/main && git push origin go/v0.2.0
    ```
 
 3. The `verify` job checks the tag shape and the adapter requirements, then runs `scripts/package-readiness.sh --language go`, which tests and vets every module and builds the five archives with their SHA-256 manifest.
@@ -80,7 +80,7 @@ Each release:
 5. Confirm from a clean directory that the modules resolve:
 
    ```sh
-   go list -m golang.cekat.ai/event-sdk@v0.1.0 golang.cekat.ai/event-sdk/middleware/gin@v0.1.0
+   go list -m golang.cekat.ai/event-sdk@v0.2.0 golang.cekat.ai/event-sdk/middleware/gin@v0.2.0
    ```
 
 ## 6. PyPI release

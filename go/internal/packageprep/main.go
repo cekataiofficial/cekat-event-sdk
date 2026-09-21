@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	packageVersion = "0.1.0"
+	packageVersion = "0.2.0"
 	modulePath     = "golang.cekat.ai/event-sdk"
 )
 
@@ -37,7 +37,7 @@ type manifestArtifact struct {
 
 func main() {
 	if len(os.Args) != 5 || os.Args[1] != "--version" || os.Args[3] != "--output" {
-		fail(errors.New("usage: packageprep --version 0.1.0 --output <absolute-directory>"))
+		fail(errors.New("usage: packageprep --version 0.2.0 --output <absolute-directory>"))
 	}
 	root, err := os.Getwd()
 	if err != nil {

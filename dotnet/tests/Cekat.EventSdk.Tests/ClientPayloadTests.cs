@@ -21,7 +21,7 @@ public sealed class ClientPayloadTests
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("secret-token", request.Headers.Authorization.Parameter);
         Assert.Equal("application/json", request.Content!.Headers.ContentType!.ToString());
-        Assert.Matches(@"^cekat-event-sdk-dotnet/0\.1\.0 dotnet/\d+\.\d+\.\d+", string.Join(" ", request.Headers.GetValues("User-Agent")));
+        Assert.Matches(@"^cekat-event-sdk-dotnet/0\.2\.0 dotnet/\d+\.\d+\.\d+", string.Join(" ", request.Headers.GetValues("User-Agent")));
 
         var body = handler.Body;
         Assert.Equal("order_paid", body.GetProperty("event_key").GetString());

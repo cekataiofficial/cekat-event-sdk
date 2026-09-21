@@ -198,7 +198,7 @@ The default `GuzzleTransport` enforces the per-attempt timeout (connection, head
 ## Local package preparation
 
 ```sh
-./scripts/package --version 0.1.0 --output /absolute/empty-directory
+./scripts/package --version 0.2.0 --output /absolute/empty-directory
 ```
 
 Runs `composer validate --strict`, installs dependencies, runs `composer audit`, the unit tests, PHPStan, and PHP-CS-Fixer, then writes a Composer archive and a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes. Because Packagist reads `composer.json` from a repository root, releases go through a generated mirror: pushing a `php/vX.Y.Z` tag makes the repository's `release-php.yml` workflow copy this directory to [cekataiofficial/cekat-event-sdk-php](https://github.com/cekataiofficial/cekat-event-sdk-php) and tag it `vX.Y.Z`, which is what Packagist reads. Development stays here. See the root release checklist.

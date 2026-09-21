@@ -59,7 +59,7 @@ def test_common_method_sends_expected_request() -> None:
     assert request.headers["authorization"] == f"Bearer {TOKEN}"
     assert request.headers["content-type"] == "application/json"
     assert request.headers.get_list("user-agent") == [
-        f"cekat-event-sdk-python/0.1.0 python/{platform.python_version()}"
+        f"cekat-event-sdk-python/0.2.0 python/{platform.python_version()}"
     ]
     body = payload(request)
     assert body["email"] == " a@example.test "

@@ -8,7 +8,7 @@ declare(strict_types=1);
  * only; it never uploads, signs, tags, or pushes. Release owners handle distribution.
  */
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 function usage(string $message): never
 {

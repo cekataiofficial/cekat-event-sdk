@@ -213,7 +213,7 @@ The automatic interceptor covers browser global `fetch` and `XMLHttpRequest` onl
 ## Local no-publish package preparation
 
 ```sh
-./scripts/package --version 0.1.0 --output /absolute/empty-directory
+./scripts/package --version 0.2.0 --output /absolute/empty-directory
 ```
 
 Bun support is verified separately with `npm run test:bun` (the test suites on Bun, including the Bun-only `test/bun` servers) and `CEKAT_NODE_RUNTIME=bun scripts/conformance` (the shared conformance fixtures on Bun). Both use Node.js and npm for installation and type checking.

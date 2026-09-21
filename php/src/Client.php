@@ -31,7 +31,7 @@ use Cekat\EventSdk\Transport\TransportRequest;
  */
 final class Client
 {
-    public const VERSION = '0.1.0';
+    public const VERSION = '0.2.0';
 
     private const INGEST_PATH = '/api/events/ingest';
 

@@ -19,5 +19,5 @@ public static class CekatConstants
     public const int MaximumResponseBodyBytes = 65_536;
 
     /// <summary>The SDK version sent in the User-Agent header.</summary>
-    public const string Version = "0.1.0";
+    public const string Version = "0.2.0";
 }
