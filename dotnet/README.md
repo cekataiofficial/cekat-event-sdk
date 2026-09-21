@@ -118,6 +118,19 @@ var acknowledgement = await CekatClient.WithVisitorIdAsync(visitorId, token => c
 
 Use `VisitorIdResolver.FromHeadersAndCookies` and `VisitorIdResolver.CookieValues` to apply the same precedence to your framework's request. Scopes nest, flow across `await` and `Task.Run`, and restore the previous visitor when disposed.
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```csharp
+var visitorMetadata = StripeMetadata.FromCurrentVisitor();
+var metadata = StripeMetadata.MergeMetadata(merchantMetadata, visitorMetadata.GetValueOrDefault("cekat_" + "visitor_id"));
+// paymentIntentOptions.Metadata = metadata.ToDictionary();
+// checkoutOptions.Metadata = metadata.ToDictionary(); // and payment-mode PaymentIntent metadata
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a fresh read-only dictionary, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Keep tracking off the request's critical path
 
 Each call waits for Cekat's response (up to 3 seconds per attempt, plus retries). In ASP.NET Core you can start the call without awaiting it; the visitor scope flows into the task, but handle its errors and don't pass the request's `CancellationToken`, which belongs to the request's lifetime:
@@ -192,7 +205,7 @@ To control proxies, TLS, or handlers, pass your own `HttpClient`: `new CekatClie
 ```sh
 dotnet test Cekat.EventSdk.sln                                  # unit, ASP.NET Core, and Functions tests
 ../scripts/conformance.sh --language dotnet                     # shared contract against the mock ingest server
-scripts/package --version 0.1.0 --output /absolute/empty/dir    # tests, vulnerability audit, pack, manifest
+scripts/package --version 0.2.0 --output /absolute/empty/dir    # tests, vulnerability audit, pack, manifest
 ```
 
 On the .NET 10 SDK, add `-p:TestTargetFramework=net10.0` (or set `TEST_TARGET_FRAMEWORK=net10.0` for the scripts) to run the tests on .NET 10. `scripts/package` never pushes, signs, tags, or publishes; releases to nuget.org run from the repository's `release-dotnet.yml` workflow when a `dotnet/vX.Y.Z` tag is pushed. See [COMPATIBILITY.md](COMPATIBILITY.md) for supported versions.

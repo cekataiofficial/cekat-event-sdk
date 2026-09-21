@@ -226,7 +226,7 @@ jobs:
         run: .venv/bin/python -m pytest
       - name: Tests, static analysis, security audit, and package build
         if: matrix.dependencies == 'highest'
-        run: .venv/bin/python scripts/package --version 0.1.0 --output "$RUNNER_TEMP/python-package"
+        run: .venv/bin/python scripts/package --version 0.2.0 --output "$RUNNER_TEMP/python-package"
       - name: Shared conformance
         working-directory: .
         run: scripts/conformance.sh --language python
@@ -272,7 +272,7 @@ jobs:
         run: dotnet test Cekat.EventSdk.sln --configuration Release -p:TestTargetFramework=${{ matrix.test-framework }}
       - name: Build, test, audit, and pack
         if: matrix.sdk == '10.0'
-        run: scripts/package --version 0.1.0 --output "$RUNNER_TEMP/dotnet-package"
+        run: scripts/package --version 0.2.0 --output "$RUNNER_TEMP/dotnet-package"
       - name: Shared conformance
         working-directory: .
         run: scripts/conformance.sh --language dotnet

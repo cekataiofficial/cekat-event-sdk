@@ -8,6 +8,7 @@ import packageManifest from '../../package.json' with { type: 'json' };
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const expectedSpecifiers = Object.keys(packageManifest.exports).map((subpath) => subpath === '.' ? '@cekatai/event-sdk' : `@cekatai/event-sdk/${subpath.replace(/^\.\//, '')}`);
+const nestPackages = ['@nestjs/common', '@nestjs/core', '@nestjs/platform-express', '@nestjs/platform-fastify'].map((name) => `${name}@${packageManifest.devDependencies[name]}`);
 
 function filesUnder(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -24,7 +25,7 @@ test('published exports resolve in a clean packed consumer and browser artifacts
     const packed = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', output], { cwd: root, encoding: 'utf8' }));
     const tarball = join(output, packed[0].filename);
     execFileSync('npm', ['init', '-y'], { cwd: output, stdio: 'ignore' });
-    execFileSync('npm', ['install', '--ignore-scripts', tarball, 'axios', 'express', 'fastify', 'koa', '@nestjs/common', '@nestjs/core', '@nestjs/platform-express', '@nestjs/platform-fastify', 'next', 'typescript'], { cwd: output, stdio: 'inherit' });
+    execFileSync('npm', ['install', '--ignore-scripts', tarball, 'axios', 'express', 'fastify', 'koa', ...nestPackages, 'next', 'typescript'], { cwd: output, stdio: 'inherit' });
     writeFileSync(join(output, 'consumer.mjs'), expectedSpecifiers.map((specifier) => `await import('${specifier}');`).join('\n'));
     execFileSync(process.execPath, ['consumer.mjs'], { cwd: output, stdio: 'inherit' });
     // CommonJS applications (for example default NestJS projects) load the ESM package through require(esm).

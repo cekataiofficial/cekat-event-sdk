@@ -1,6 +1,6 @@
 name: Release readiness
 
-# Manual, no-publish readiness check for the 0.1.0 release. It runs every language's scripts/package on
+# Manual, no-publish readiness check for the 0.2.0 release. It runs every language's scripts/package on
 # the current toolchain profile, validates each manifest and the seven-language aggregate, and keeps the
 # artifacts as workflow artifacts for review. It never publishes, signs, tags, creates a release, or
 # reads secrets; publication stays a manual release-owner step.
@@ -136,7 +136,7 @@ jobs:
       # Workflow artifact storage for review; this is not registry publication.
       - uses: actions/upload-artifact@v7
         with:
-          name: cekat-event-sdk-0.1.0-${{ matrix.language }}
+          name: cekat-event-sdk-0.2.0-${{ matrix.language }}
           path: ${{ runner.temp }}/cekat-artifacts
           if-no-files-found: error
           retention-days: 14
@@ -152,7 +152,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          pattern: cekat-event-sdk-0.1.0-*
+          pattern: cekat-event-sdk-0.2.0-*
           path: ${{ runner.temp }}/cekat-artifacts
           merge-multiple: true
       - name: Validate the seven-language aggregate

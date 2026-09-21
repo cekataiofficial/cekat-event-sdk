@@ -135,6 +135,20 @@ with visitor_scope(" visitor-123 "):  # explicit value, trimmed
 
 Scopes nest and restore the previous visitor on exit, including when an exception or cancellation leaves the block.
 
+## Stripe metadata composition
+
+Use the dependency-free helper with the merchant's own Stripe client; it does not create Stripe requests or send Cekat events.
+
+```python
+from cekat_event_sdk.stripe import merge_metadata, metadata_from_current_visitor
+
+metadata = merge_metadata(merchant_metadata, metadata_from_current_visitor().get("cekat_" + "visitor_id"))
+stripe.PaymentIntent.create(amount=1200, currency="usd", metadata=metadata)
+stripe.checkout.Session.create(mode="payment", metadata=metadata, payment_intent_data={"metadata": metadata})
+```
+
+The helper accepts only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor and returns a fresh mapping. Invalid or absent visitors leave merchant metadata unchanged.
+
 ## Keep tracking off the request's critical path
 
 Each call waits for Cekat's response (up to 3 seconds per attempt, plus retries). Don't make users wait for it.
@@ -232,7 +246,7 @@ python3 -m venv .venv
 .venv/bin/python -m ruff check src tests && .venv/bin/python -m ruff format --check src tests
 .venv/bin/python -m mypy
 ../scripts/conformance.sh --language python  # shared contract against the mock ingest server
-.venv/bin/python scripts/package --version 0.1.0 --output /absolute/empty/dir
+.venv/bin/python scripts/package --version 0.2.0 --output /absolute/empty/dir
 ```
 
 `pip install -c constraints-lowest.txt -e ".[test,django,flask,asgi,fastapi]"` installs the declared dependency floors. `scripts/package` runs every check plus `pip-audit`, builds the wheel and sdist, runs `twine check`, and writes a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes; releases to PyPI run from the repository's `release-python.yml` workflow when a `python/vX.Y.Z` tag is pushed. See [docs/compatibility.md](docs/compatibility.md) for supported versions.

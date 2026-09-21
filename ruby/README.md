@@ -72,6 +72,18 @@ end
 
 The visitor scope lives in fiber storage (`Fiber[]`), so it is isolated per request under threaded servers (Puma) and fiber-based servers (Falcon). Every scope restores the previous visitor when it ends, including when it raises, so long-running workers never leak a visitor ID between requests. Threads and fibers started inside a request begin with a copy of its scope. The scope ends when the middleware returns, so events emitted while a streaming response body is iterated must pass `visitor_id:` explicitly.
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```ruby
+metadata = CekatEventSdk::Stripe.merge_metadata(merchant_metadata, CekatEventSdk::Stripe.metadata_from_current_visitor["cekat_" + "visitor_id"])
+# stripe.payment_intents.create(amount: 1200, currency: "usd", metadata: metadata)
+# stripe.checkout.sessions.create(mode: "payment", metadata: metadata, payment_intent_data: { metadata: metadata })
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a fresh hash, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Keep tracking off the request's critical path
 
 Calls are synchronous, so each event adds its round-trip to the request. To send in the background, capture the visitor ID while the request scope is active and pass it explicitly:
@@ -132,7 +144,7 @@ The Net::HTTP transport opens a fresh connection per attempt, never follows redi
 bundle install
 bundle exec rake            # core, Rack, and Rails specs plus RuboCop
 RAILS_VERSION="~> 8.0.0" RACK_VERSION="~> 2.2" bundle update && bundle exec rake spec
-./scripts/package --version 0.1.0 --output /absolute/empty-directory
+./scripts/package --version 0.2.0 --output /absolute/empty-directory
 ```
 
 `scripts/package` runs the specs, RuboCop, and `bundle-audit`, then builds the gem and a SHA-256 `manifest.json`. It never pushes, signs, or tags; releases to RubyGems run from the repository's `release-ruby.yml` workflow when a `ruby/vX.Y.Z` tag is pushed. `scripts/conformance` runs the shared conformance fixtures (see `conformance/README.md`); the three caller-cancellation cases are reported as `not_applicable` for Ruby.

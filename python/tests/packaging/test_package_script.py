@@ -23,13 +23,13 @@ def test_rejects_invalid_arguments_before_running_checks(dirty: Path) -> None:
     temporary = tempfile.gettempdir()
     cases = [
         [],
-        ["--version", "0.1.0"],
+        ["--version", "0.2.0"],
         ["--version", "0.1.1", "--output", temporary],
-        ["--version", "0.1.0", "--output", "relative"],
-        ["--version", "0.1.0", "--output", f"{temporary}/../tmp"],
-        ["--version", "0.1.0", "--output", str(dirty)],
-        ["--version", "0.1.0", "--output", str(dirty / "stale.whl")],
-        ["--version", "0.1.0", "--output", str(ROOT / "dist-output")],
+        ["--version", "0.2.0", "--output", "relative"],
+        ["--version", "0.2.0", "--output", f"{temporary}/../tmp"],
+        ["--version", "0.2.0", "--output", str(dirty)],
+        ["--version", "0.2.0", "--output", str(dirty / "stale.whl")],
+        ["--version", "0.2.0", "--output", str(ROOT / "dist-output")],
     ]
     for arguments in cases:
         result = subprocess.run(

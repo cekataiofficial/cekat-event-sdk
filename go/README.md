@@ -55,6 +55,20 @@ _, err := client.OrderPaid(ctx, order.Total, order.Currency, cekat.Event{
 })
 ```
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```go
+import cekatstripe "golang.cekat.ai/event-sdk/stripe"
+
+metadata := cekatstripe.MergeMetadata(merchantMetadata, cekatstripe.MetadataFromContext(r.Context())["cekat_"+"visitor_id"])
+// stripeParams.Metadata = metadata
+// checkoutParams.Metadata = metadata; checkoutParams.PaymentIntentData.Metadata = metadata
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a fresh map, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Keep tracking off the request's critical path
 
 Event submission is synchronous. To avoid adding tracking latency to a user-facing handler, submit in a goroutine. Use `context.WithoutCancel` so the goroutine keeps the request's visitor ID but is not cancelled when the handler returns, and always add your own deadline:
@@ -165,4 +179,4 @@ A retry can create a **duplicate** event when the first attempt reached the serv
 
 ## Local package preparation
 
-`./scripts/package --version 0.1.0 --output /absolute/empty-directory` runs tests and vet for every module, then creates a deterministic Git-tracked source archive for each publishable module (the core and each `middleware/*` adapter) plus a SHA-256 manifest. The modules are served from `golang.cekat.ai/event-sdk`, where each module path has its own `go-import` meta tag pointing at that module's directory in the `cekataiofficial/cekat-event-sdk` repository (`go` for the core, `go/middleware/gin` for the Gin adapter), so release tags carry the full directory prefix: `go/v0.1.0` for the core and `go/middleware/gin/v0.1.0` for an adapter. The adapters' `replace` directives only affect local development. It does not publish, sign, create tags, or push changes. Releases run from the repository's `release-go.yml` workflow: a release owner pushes the core tag `go/vX.Y.Z`, and the workflow verifies the commit, creates the adapter tags, and publishes a GitHub Release for each module. See the root release checklist.
+`./scripts/package --version 0.2.0 --output /absolute/empty-directory` runs tests and vet for every module, then creates a deterministic Git-tracked source archive for each publishable module (the core and each `middleware/*` adapter) plus a SHA-256 manifest. The modules are served from `golang.cekat.ai/event-sdk`, where each module path has its own `go-import` meta tag pointing at that module's directory in the `cekataiofficial/cekat-event-sdk` repository (`go` for the core, `go/middleware/gin` for the Gin adapter), so release tags carry the full directory prefix: `go/v0.2.0` for the core and `go/middleware/gin/v0.2.0` for an adapter. The adapters' `replace` directives only affect local development. It does not publish, sign, create tags, or push changes. Releases run from the repository's `release-go.yml` workflow: a release owner pushes the core tag `go/vX.Y.Z`, and the workflow verifies the commit, creates the adapter tags, and publishes a GitHub Release for each module. See the root release checklist.

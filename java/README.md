@@ -2,7 +2,7 @@
 
 Submit identity-bearing Cekat events from Java backends and automatically attach the browser visitor ID (from the `X-Cekat-Visitor-ID` header or `_cekat_visitor_id` cookie) of the request being handled.
 
-Requires Java 17 or newer. Artifacts (group `ai.cekat`, version `0.1.0`):
+Requires Java 17 or newer. Artifacts (group `ai.cekat`, version `0.2.0`):
 
 | Artifact | Contents | Dependencies |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ Requires Java 17 or newer. Artifacts (group `ai.cekat`, version `0.1.0`):
 <dependency>
   <groupId>ai.cekat</groupId>
   <artifactId>cekat-event-sdk-spring-boot</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
@@ -136,6 +136,20 @@ executor.submit(() -> {
 
 Submitting from a background executor also keeps tracking off the request's critical path. Jobs that run later need only the contact's email or phone number.
 
+## Stripe metadata composition
+
+Use the helper with the merchant's Stripe client; it does not create a Stripe request or send a Cekat event.
+
+```java
+import ai.cekat.events.stripe.StripeMetadata;
+
+Map<String, String> metadata = StripeMetadata.mergeMetadata(merchantMetadata, StripeMetadata.fromCurrentVisitor().get("cekat_" + "visitor_id"));
+// paymentIntentParams.putMetadata(metadata);
+// checkoutSessionParams.putMetadata(metadata); // and payment-mode PaymentIntent metadata
+```
+
+Only a trimmed 1–128 character `[A-Za-z0-9_-]` visitor becomes the Stripe visitor metadata entry. Merge returns a new immutable map, preserving merchant keys and leaving invalid or absent visitor input unchanged.
+
 ## Errors, interruption, and retries
 
 All SDK exceptions extend the unchecked `CekatException`, which exposes `attempts()` and `deliveryOutcomeUnknown()`:
@@ -170,7 +184,7 @@ CekatClient client = new CekatClient(token, CekatClientOptions.builder()
 ```sh
 ./mvnw verify                                    # tests; Checkstyle and SpotBugs also run on JDK 21+
 ./mvnw verify -Dspring-boot.version=4.0.8        # test the Spring module against another Boot line
-./scripts/package --version 0.1.0 --output /absolute/empty-directory
+./scripts/package --version 0.2.0 --output /absolute/empty-directory
 ```
 
 `scripts/package` runs the full build and writes the parent POM plus each module's POM, jar, sources jar, and Javadoc jar in Maven repository layout with a SHA-256 `manifest.json`. It never deploys, signs, tags, or pushes. Releases run from the repository's `release-java.yml` workflow when a `java/vX.Y.Z` tag is pushed: it signs and uploads those artifacts to the Sonatype Portal and stops at `VALIDATED`, leaving the final Publish to a release owner. See the root release checklist. `scripts/conformance` runs the shared conformance fixtures, including the three caller-cancellation cases; see `conformance/README.md`.

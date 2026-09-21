@@ -16,13 +16,13 @@ public sealed class PackageScriptTests
         string[][] cases =
         [
             [],
-            ["--version", "0.1.0"],
+            ["--version", "0.2.0"],
             ["--version", "0.1.1", "--output", temp],
-            ["--version", "0.1.0", "--output", "relative"],
-            ["--version", "0.1.0", "--output", $"{temp}/../tmp"],
-            ["--version", "0.1.0", "--output", dirty.FullName],
-            ["--version", "0.1.0", "--output", Path.Combine(dirty.FullName, "stale.nupkg")],
-            ["--version", "0.1.0", "--output", Path.Combine(DotnetDirectory, "artifacts-output")],
+            ["--version", "0.2.0", "--output", "relative"],
+            ["--version", "0.2.0", "--output", $"{temp}/../tmp"],
+            ["--version", "0.2.0", "--output", dirty.FullName],
+            ["--version", "0.2.0", "--output", Path.Combine(dirty.FullName, "stale.nupkg")],
+            ["--version", "0.2.0", "--output", Path.Combine(DotnetDirectory, "artifacts-output")],
         ];
         try
         {

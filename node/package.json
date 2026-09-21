@@ -1,6 +1,6 @@
 {
   "name": "@cekatai/event-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -36,6 +36,10 @@
     "./node": {
       "types": "./dist/node/index.d.ts",
       "default": "./dist/node/index.js"
+    },
+    "./stripe": {
+      "types": "./dist/node/stripe.d.ts",
+      "default": "./dist/node/stripe.js"
     },
     "./fetch": {
       "types": "./dist/integrations/fetch.d.ts",

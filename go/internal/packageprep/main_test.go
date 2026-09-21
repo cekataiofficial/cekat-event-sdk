@@ -81,7 +81,7 @@ func TestPrepareWritesDeterministicManifestAndTokenFreeArchive(t *testing.T) {
 	archivePaths := make([]string, 0, len(archive.File))
 	for _, file := range archive.File {
 		archivePaths = append(archivePaths, file.Name)
-		if !strings.HasPrefix(file.Name, "golang.cekat.ai/event-sdk@v0.1.0/") {
+		if !strings.HasPrefix(file.Name, "golang.cekat.ai/event-sdk@v0.2.0/") {
 			t.Errorf("archive path %q does not use the module-version root", file.Name)
 		}
 		reader, err := file.Open()
@@ -89,7 +89,7 @@ func TestPrepareWritesDeterministicManifestAndTokenFreeArchive(t *testing.T) {
 			t.Fatalf("open archive entry %q: %v", file.Name, err)
 		}
 		reader.Close()
-		if _, err := os.Stat(filepath.Join(moduleRoot, filepath.FromSlash(strings.TrimPrefix(file.Name, "golang.cekat.ai/event-sdk@v0.1.0/")))); err != nil {
+		if _, err := os.Stat(filepath.Join(moduleRoot, filepath.FromSlash(strings.TrimPrefix(file.Name, "golang.cekat.ai/event-sdk@v0.2.0/")))); err != nil {
 			t.Fatalf("archive entry %q is not a tracked source file: %v", file.Name, err)
 		}
 	}
@@ -138,20 +138,20 @@ func TestPrepareWritesOneArchivePerPublishableModule(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][]string{
-		"cekat-event-sdk-go-middleware-gin-v0.1.0.zip": {
-			"golang.cekat.ai/event-sdk/middleware/gin@v0.1.0/go.mod",
-			"golang.cekat.ai/event-sdk/middleware/gin@v0.1.0/go.sum",
-			"golang.cekat.ai/event-sdk/middleware/gin@v0.1.0/middleware.go",
+		"cekat-event-sdk-go-middleware-gin-v0.2.0.zip": {
+			"golang.cekat.ai/event-sdk/middleware/gin@v0.2.0/go.mod",
+			"golang.cekat.ai/event-sdk/middleware/gin@v0.2.0/go.sum",
+			"golang.cekat.ai/event-sdk/middleware/gin@v0.2.0/middleware.go",
 		},
-		"cekat-event-sdk-go-v0.1.0.zip": {
-			"golang.cekat.ai/event-sdk@v0.1.0/README.md",
-			"golang.cekat.ai/event-sdk@v0.1.0/client.go",
-			"golang.cekat.ai/event-sdk@v0.1.0/go.mod",
-			"golang.cekat.ai/event-sdk@v0.1.0/internal/shared/shared.go",
-			"golang.cekat.ai/event-sdk@v0.1.0/nested/source.go",
+		"cekat-event-sdk-go-v0.2.0.zip": {
+			"golang.cekat.ai/event-sdk@v0.2.0/README.md",
+			"golang.cekat.ai/event-sdk@v0.2.0/client.go",
+			"golang.cekat.ai/event-sdk@v0.2.0/go.mod",
+			"golang.cekat.ai/event-sdk@v0.2.0/internal/shared/shared.go",
+			"golang.cekat.ai/event-sdk@v0.2.0/nested/source.go",
 		},
 	}
-	if len(manifest.Artifacts) != len(want) || manifest.Artifacts[0].Path != "cekat-event-sdk-go-middleware-gin-v0.1.0.zip" {
+	if len(manifest.Artifacts) != len(want) || manifest.Artifacts[0].Path != "cekat-event-sdk-go-middleware-gin-v0.2.0.zip" {
 		t.Fatalf("artifacts = %#v, want sorted core and gin archives without internal modules", manifest.Artifacts)
 	}
 	for _, artifact := range manifest.Artifacts {
