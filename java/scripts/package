@@ -3,7 +3,7 @@
 # it never deploys, signs, tags, or pushes. Release owners handle distribution.
 set -eu
 
-VERSION=0.2.0
+VERSION=0.3.0
 usage() {
   echo "$1" >&2
   echo "usage: scripts/package --version $VERSION --output <absolute-empty-directory>" >&2

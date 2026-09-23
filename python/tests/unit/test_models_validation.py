@@ -38,7 +38,7 @@ def body(
 
 
 def test_package_exposes_initial_version_and_public_names() -> None:
-    assert cekat_event_sdk.__version__ == "0.2.0"
+    assert cekat_event_sdk.__version__ == "0.3.0"
     for name in cekat_event_sdk.__all__:
         assert hasattr(cekat_event_sdk, name)
 

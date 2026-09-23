@@ -3,7 +3,7 @@
 
 It runs checks and builds only; it never uploads, signs, tags, or pushes. Release owners handle
 distribution. Run it with the interpreter that has the ``test`` extra installed, for example
-``.venv/bin/python scripts/package --version 0.2.0 --output /absolute/empty/dir``.
+``.venv/bin/python scripts/package --version 0.3.0 --output /absolute/empty/dir``.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 ROOT = Path(__file__).resolve().parent.parent
 
 

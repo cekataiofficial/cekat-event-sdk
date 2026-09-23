@@ -247,7 +247,7 @@ python3 -m venv .venv
 .venv/bin/python -m ruff check src tests && .venv/bin/python -m ruff format --check src tests
 .venv/bin/python -m mypy
 ../scripts/conformance.sh --language python  # shared contract against the mock ingest server
-.venv/bin/python scripts/package --version 0.2.0 --output /absolute/empty/dir
+.venv/bin/python scripts/package --version 0.3.0 --output /absolute/empty/dir
 ```
 
 `pip install -c constraints-lowest.txt -e ".[test,django,flask,asgi,fastapi]"` installs the declared dependency floors. `scripts/package` runs every check plus `pip-audit`, builds the wheel and sdist, runs `twine check`, and writes a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes; releases to PyPI run from the repository's `release-python.yml` workflow when a `python/vX.Y.Z` tag is pushed. See [docs/compatibility.md](docs/compatibility.md) for supported versions.

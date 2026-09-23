@@ -15,7 +15,7 @@
 
   <PropertyGroup Condition="!$(MSBuildProjectName.EndsWith('Tests'))">
     <TargetFramework>net8.0</TargetFramework>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Cekat</Authors>
     <Company>Cekat</Company>
     <Copyright>Copyright (c) Cekat</Copyright>

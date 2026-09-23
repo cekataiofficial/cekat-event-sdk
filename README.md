@@ -271,7 +271,7 @@ More: [php/README.md](php/README.md)
 <dependency>
   <groupId>ai.cekat</groupId>
   <artifactId>cekat-event-sdk-spring-boot</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 

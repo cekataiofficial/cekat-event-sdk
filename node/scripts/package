@@ -6,18 +6,18 @@ import { lstat, mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 function usage(message) {
   if (message) process.stderr.write(`${message}\n`);
-  process.stderr.write('usage: scripts/package --version 0.2.0 --output <absolute-empty-directory>\n');
+  process.stderr.write('usage: scripts/package --version 0.3.0 --output <absolute-empty-directory>\n');
   process.exitCode = 2;
 }
 
 function parseArguments(args) {
   if (args.length !== 4 || args[0] !== '--version' || args[2] !== '--output') {
-    throw new TypeError('expected exactly --version 0.2.0 --output <absolute-empty-directory>');
+    throw new TypeError('expected exactly --version 0.3.0 --output <absolute-empty-directory>');
   }
   if (args[1] !== VERSION) throw new TypeError(`only version ${VERSION} may be packaged`);
   const output = args[3];

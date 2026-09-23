@@ -145,7 +145,7 @@ The Net::HTTP transport opens a fresh connection per attempt, never follows redi
 bundle install
 bundle exec rake            # core, Rack, and Rails specs plus RuboCop
 RAILS_VERSION="~> 8.0.0" RACK_VERSION="~> 2.2" bundle update && bundle exec rake spec
-./scripts/package --version 0.2.0 --output /absolute/empty-directory
+./scripts/package --version 0.3.0 --output /absolute/empty-directory
 ```
 
 `scripts/package` runs the specs, RuboCop, and `bundle-audit`, then builds the gem and a SHA-256 `manifest.json`. It never pushes, signs, or tags; releases to RubyGems run from the repository's `release-ruby.yml` workflow when a `ruby/vX.Y.Z` tag is pushed. `scripts/conformance` runs the shared conformance fixtures (see `conformance/README.md`); the three caller-cancellation cases are reported as `not_applicable` for Ruby.
