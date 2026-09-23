@@ -195,7 +195,7 @@ Exception messages and `ToString()` never include the access token or request he
 | Option | Default | |
 | --- | --- | --- |
 | `AccessToken` | required | Server-side Cekat access token. |
-| `BaseUrl` | `https://server.cekat.ai` | Absolute HTTP(S) origin without path, query, fragment, or credentials. |
+| `BaseUrl` | `https://t.cekat.ai` | Absolute HTTP(S) origin without path, query, fragment, or credentials. |
 | `Timeout` | 3 seconds | Per attempt, covering the connection, response headers, and response body. |
 | `RetryCount` | 2 | Retries after the first attempt; 0 disables retries. |
 

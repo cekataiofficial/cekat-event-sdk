@@ -4,7 +4,7 @@ namespace Cekat.EventSdk;
 public static class CekatConstants
 {
     /// <summary>The production Cekat origin.</summary>
-    public const string DefaultBaseUrl = "https://server.cekat.ai";
+    public const string DefaultBaseUrl = "https://t.cekat.ai";
 
     /// <summary>The ingest endpoint path appended to the configured origin.</summary>
     public const string IngestPath = "/api/events/ingest";

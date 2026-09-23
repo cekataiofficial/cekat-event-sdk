@@ -49,7 +49,7 @@ try {
 
 `formSubmitted(event)` sends the common `form_submitted` event (`is_common: true`). `orderPaid(amount, currency, event)` additionally requires a finite `amount` (any `Number`, such as `BigDecimal`) and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in the event's properties.
 
-Events are sent to `https://server.cekat.ai/api/events/ingest`. An `Acknowledgement` means Cekat accepted the event for asynchronous processing. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
+Events are sent to `https://t.cekat.ai/api/events/ingest`. An `Acknowledgement` means Cekat accepted the event for asynchronous processing. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
 
 At least one of `email` or `phoneNumber` must be nonblank; identity strings are sent unchanged. Property values may be `null`, `Boolean`, `String`, finite numbers (`Byte`, `Short`, `Integer`, `Long`, `Float`, `Double`, `BigInteger`, `BigDecimal`), `List`s, and `Map`s with `String` keys. Integers must be within ±9,007,199,254,740,991. Other objects (including `Instant` — format it first), arrays, cycles, and non-`String` keys throw `ValidationException` before any request.
 
@@ -75,7 +75,7 @@ Adding `cekat-event-sdk-spring-boot` registers the visitor filter automatically,
 
 ```properties
 cekat.access-token=${CEKAT_ACCESS_TOKEN}
-cekat.base-url=https://server.cekat.ai
+cekat.base-url=https://t.cekat.ai
 cekat.timeout=3s
 cekat.retry-count=2
 ```
@@ -172,7 +172,7 @@ Transport failures, per-attempt timeouts, and HTTP 429, 500, 502, 503, and 504 a
 
 ```java
 CekatClient client = new CekatClient(token, CekatClientOptions.builder()
-        .baseUrl("https://server.cekat.ai")
+        .baseUrl("https://t.cekat.ai")
         .timeout(Duration.ofSeconds(3))
         .retryCount(2)
         .build());

@@ -132,7 +132,7 @@ Transport failures, timeouts, and HTTP 429, 500, 502, 503, and 504 are retried, 
 ## Configuration
 
 ```ruby
-CekatEventSdk::Client.new(access_token: token, base_url: "https://server.cekat.ai", timeout: 3, retry_count: 2)
+CekatEventSdk::Client.new(access_token: token, base_url: "https://t.cekat.ai", timeout: 3, retry_count: 2)
 ```
 
 `base_url` must be an absolute HTTP(S) origin without credentials, path, query, or fragment; the SDK always posts to `/api/events/ingest`. Requests send `User-Agent: cekat-event-sdk-ruby/<version>`.

@@ -18,7 +18,7 @@
 
 - Execute the shared protocol/conformance plan first. This plan consumes `conformance/fixtures/cases`, its schemas, and the running mock API; it does not alter their formats.
 - The approved coordinate constraint is a Cekat-owned module ending in `cekat-event-sdk-go`. This plan uses `github.com/cekataiofficial/cekat-event-sdk-go` only after Task 1 verifies Cekat organization ownership and repository-name availability; all five adapters are packages in this one module. If that exact ownership check fails, stop for product review instead of initializing a different module or reverting to the nonconforming `/go` suffix.
-- Default origin is `https://server.cekat.ai`; every request is `POST /api/events/ingest` with `Authorization: Bearer <access_token>` and JSON content type. Never serialize `business_id` or expose the token in errors.
+- Default origin is `https://t.cekat.ai`; every request is `POST /api/events/ingest` with `Authorization: Bearer <access_token>` and JSON content type. Never serialize `business_id` or expose the token in errors.
 - A custom base URL must be an absolute HTTP(S) origin without credentials, non-root path, query, or fragment. A trailing slash is accepted and removed.
 - The timeout is 10 seconds per network attempt. Two retries follow the initial request. Full jitter is uniformly `[0,100ms]` before retry 1 and `[0,200ms]` before retry 2.
 - Retry transport failures, transport timeouts while the caller context remains active, and HTTP `500` only. Never retry any received non-`500` response.
@@ -307,7 +307,7 @@ git commit -m "build(go): initialize SDK module"
 
 - [ ] **Step 1: Write table tests for defaults, invalid options, and `errors.As`**
 
-Cover blank token, relative/non-HTTP URL, credentials/path/query/fragment, zero timeout, negative retries, nil HTTP client, trailing-slash normalization, token redaction, error fields, `Unwrap`, and body ownership. Assert defaults `https://server.cekat.ai`, 10 seconds, and 2 retries.
+Cover blank token, relative/non-HTTP URL, credentials/path/query/fragment, zero timeout, negative retries, nil HTTP client, trailing-slash normalization, token redaction, error fields, `Unwrap`, and body ownership. Assert defaults `https://t.cekat.ai`, 10 seconds, and 2 retries.
 
 - [ ] **Step 2: Run the focused tests**
 

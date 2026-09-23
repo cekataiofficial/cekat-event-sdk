@@ -47,12 +47,12 @@ The first release will not provide:
 SDKs send:
 
 ```http
-POST https://server.cekat.ai/api/events/ingest
+POST https://t.cekat.ai/api/events/ingest
 Authorization: Bearer <access_token>
 Content-Type: application/json
 ```
 
-The default base URL is `https://server.cekat.ai`. Customers may override the base URL, but `/api/events/ingest` is a fixed SDK path and is not independently configurable.
+The default base URL is `https://t.cekat.ai`. Customers may override the base URL, but `/api/events/ingest` is a fixed SDK path and is not independently configurable.
 
 The access token selects the tenant. SDKs must not send `business_id` in the payload and must never expose the access token in errors, diagnostics, browser bundles, or logs.
 
@@ -118,7 +118,7 @@ Its API documentation must state that acknowledgement means accepted for asynchr
 
 Only `accessToken` is required. Every SDK also exposes optional settings with defaults:
 
-- `baseURL`, default `https://server.cekat.ai`
+- `baseURL`, default `https://t.cekat.ai`
 - request `timeout`, default 3 seconds per network attempt
 - `retryCount`, default `2` retries after the initial attempt
 

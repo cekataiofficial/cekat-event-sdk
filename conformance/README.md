@@ -2,7 +2,7 @@
 
 This directory is the normative, language-neutral handoff for the seven Cekat Event SDKs and the root CI runner. It defines the fixture corpus, schemas, mock process, and the boundary that each language runner must implement. It does not define language-specific build commands or SDK error classes.
 
-The production target is `POST https://server.cekat.ai/api/events/ingest`. SDKs may configure a base origin, but `POST /api/events/ingest` is fixed and must not be independently configurable. Every request uses `Authorization: Bearer <access_token>` and JSON content.
+The production target is `POST https://t.cekat.ai/api/events/ingest`. SDKs may configure a base origin, but `POST /api/events/ingest` is fixed and must not be independently configurable. Every request uses `Authorization: Bearer <access_token>` and JSON content.
 
 ## Start and stop the mock
 

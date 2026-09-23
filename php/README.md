@@ -189,7 +189,7 @@ PHP has no portable caller cancellation, so bound each call with `timeoutSeconds
 ```php
 use Cekat\EventSdk\ClientOptions;
 
-$cekat = new Client($token, new ClientOptions(baseUrl: 'https://server.cekat.ai', timeoutSeconds: 3.0, retryCount: 2));
+$cekat = new Client($token, new ClientOptions(baseUrl: 'https://t.cekat.ai', timeoutSeconds: 3.0, retryCount: 2));
 ```
 
 `baseUrl` must be an absolute HTTP(S) origin without credentials, path, query, or fragment; the SDK always posts to `/api/events/ingest`. Requests send `User-Agent: cekat-event-sdk-php/<version>`.

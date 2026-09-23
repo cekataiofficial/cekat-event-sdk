@@ -20,7 +20,7 @@
 
 - Package/distribution name: `cekat-event-sdk`; import package: `cekat_event_sdk`; initial package-preparation version: `0.1.0`.
 - Before dependency setup, query official Python lifecycle and package metadata, record the observed evidence, and stop if the proposed Python `>=3.10` floor cannot satisfy the maintained/current and roughly-five-year policy. Repeat the gate immediately before release preparation.
-- Endpoint: `POST <origin>/api/events/ingest`; default origin `https://server.cekat.ai`; only an absolute HTTP(S) origin with no credentials, non-root path, query, or fragment is valid. Normalize one trailing slash.
+- Endpoint: `POST <origin>/api/events/ingest`; default origin `https://t.cekat.ai`; only an absolute HTTP(S) origin with no credentials, non-root path, query, or fragment is valid. Normalize one trailing slash.
 - Send `Authorization: Bearer <access_token>` and `Content-Type: application/json`; never send `business_id`; never expose the token in errors, diagnostics, or representations.
 - Constructor requires a nonblank access token. Defaults are a 10-second timeout per network attempt and two retries after the initial attempt. Caller/task lifetime bounds the entire async operation.
 - Retry only HTTPX transport failures, HTTPX timeouts while the operation remains active, and HTTP `500`. Never retry `400`, `401`, `404`, other HTTP statuses, or `asyncio.CancelledError`.
@@ -112,7 +112,7 @@ class Acknowledgement:
     raw_body: bytes
 
 class Client:
-    def __init__(self, access_token: str, *, base_url: str = "https://server.cekat.ai",
+    def __init__(self, access_token: str, *, base_url: str = "https://t.cekat.ai",
                  timeout: float = 10.0, retry_count: int = 2,
                  http_client: httpx.Client | None = None) -> None: ...
     def user_registration(self, event: Event) -> Acknowledgement: ...
@@ -125,7 +125,7 @@ class Client:
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None: ...
 
 class AsyncClient:
-    def __init__(self, access_token: str, *, base_url: str = "https://server.cekat.ai",
+    def __init__(self, access_token: str, *, base_url: str = "https://t.cekat.ai",
                  timeout: float = 10.0, retry_count: int = 2,
                  http_client: httpx.AsyncClient | None = None) -> None: ...
     async def user_registration(self, event: Event) -> Acknowledgement: ...

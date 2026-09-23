@@ -55,7 +55,7 @@ describe('Client configuration', () => {
       validatedProperties: ['email'],
       rawBody: acknowledgement('user_login'),
     });
-    expect(fetch).toHaveBeenCalledWith('https://server.cekat.ai/api/events/ingest', expect.objectContaining({
+    expect(fetch).toHaveBeenCalledWith('https://t.cekat.ai/api/events/ingest', expect.objectContaining({
       headers: expect.objectContaining({ authorization: 'Bearer token-not-in-payload' }),
     }));
 
@@ -65,12 +65,12 @@ describe('Client configuration', () => {
   it('accepts only absolute HTTP(S) origins and validates delivery options before use', () => {
     const fetch = successfulFetch();
     for (const baseURL of [
-      'server.cekat.ai',
-      'ftp://server.cekat.ai',
-      'https://user:password@server.cekat.ai',
-      'https://server.cekat.ai/events',
-      'https://server.cekat.ai/?query=value',
-      'https://server.cekat.ai/#fragment',
+      't.cekat.ai',
+      'ftp://t.cekat.ai',
+      'https://user:password@t.cekat.ai',
+      'https://t.cekat.ai/events',
+      'https://t.cekat.ai/?query=value',
+      'https://t.cekat.ai/#fragment',
       'https://:443',
     ]) {
       expect(validationError(() => new Client('token', { baseURL, fetch })).message).toContain('baseURL');

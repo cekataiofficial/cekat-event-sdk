@@ -231,7 +231,7 @@ Error messages never include the access token or request headers, and client `re
 | Argument | Default | |
 | --- | --- | --- |
 | `access_token` | required | Server-side Cekat access token. |
-| `base_url` | `https://server.cekat.ai` | Absolute HTTP(S) origin without path, query, fragment, or credentials. |
+| `base_url` | `https://t.cekat.ai` | Absolute HTTP(S) origin without path, query, fragment, or credentials. |
 | `timeout` | `3.0` | Seconds per attempt, covering the connection, response headers, and response body. |
 | `retry_count` | `2` | Retries after the first attempt; `0` disables retries. |
 | `http_client` | SDK-owned | Your own `httpx.Client` / `httpx.AsyncClient` (proxies, TLS, limits). Never closed by the SDK. |

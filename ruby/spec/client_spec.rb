@@ -71,13 +71,13 @@ RSpec.describe CekatEventSdk::Client do
 
     [
       { access_token: " " }, { access_token: nil }, { timeout: 0 }, { timeout: Float::INFINITY }, { retry_count: -1 }, { retry_count: 1.5 },
-      { base_url: "server.cekat.ai" }, { base_url: "ftp://server.cekat.ai" }, { base_url: "https://user:pass@server.cekat.ai" },
-      { base_url: "https://server.cekat.ai/events" }, { base_url: "https://server.cekat.ai/?q" }, { base_url: "https://server.cekat.ai/#x" }
+      { base_url: "t.cekat.ai" }, { base_url: "ftp://t.cekat.ai" }, { base_url: "https://user:pass@t.cekat.ai" },
+      { base_url: "https://t.cekat.ai/events" }, { base_url: "https://t.cekat.ai/?q" }, { base_url: "https://t.cekat.ai/#x" }
     ].each do |options|
       expect { described_class.new(access_token: token, **options) }.to raise_error(CekatEventSdk::ValidationError)
     end
     expect(described_class.new(access_token: token, base_url: "HTTP://127.0.0.1:8080/").base_url).to eq("http://127.0.0.1:8080")
-    expect(described_class.new(access_token: token).base_url).to eq("https://server.cekat.ai")
+    expect(described_class.new(access_token: token).base_url).to eq("https://t.cekat.ai")
   end
 
   it "uses the visitor scope with explicit visitor precedence" do

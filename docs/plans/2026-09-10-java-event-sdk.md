@@ -19,7 +19,7 @@
 ## Global Constraints
 
 - The Java coordinate is consistently Maven group `ai.cekat`, Java package prefix `ai.cekat.events`, and Maven repository path prefix `ai/cekat/`. Artifacts are `cekat-event-sdk-core`, `cekat-event-sdk-jakarta-servlet`, and `cekat-event-sdk-spring-boot`. Task 1 verifies Cekat control of the group before POM creation; if ownership is not verified, execution stops rather than substituting another coordinate.
-- Default target is `POST https://server.cekat.ai/api/events/ingest`; `baseUrl` is an absolute HTTP(S) origin and the fixed path is always appended.
+- Default target is `POST https://t.cekat.ai/api/events/ingest`; `baseUrl` is an absolute HTTP(S) origin and the fixed path is always appended.
 - Only an `accessToken` is required. Send `Authorization: Bearer <accessToken>` and never include the token in errors, logs, request scope, browser assets, or test snapshots.
 - Default timeout is 10 seconds per network attempt. The caller thread bounds the complete synchronous operation through interruption.
 - Default retry count is two after the initial attempt. Retry only transport/connection failures, eligible timeouts, and HTTP `500`.
@@ -861,7 +861,7 @@ Run:
 
 ```bash
 for text in \
-  'https://server.cekat.ai/api/events/ingest' \
+  'https://t.cekat.ai/api/events/ingest' \
   '_cekat_visitor_id' \
   'X-Cekat-Visitor-ID' \
   'accepted for asynchronous processing' \
@@ -903,7 +903,7 @@ Show Servlet programmatic filter registration with async support and dispatchers
 
 ```properties
 cekat.access-token=${CEKAT_ACCESS_TOKEN}
-cekat.base-url=https://server.cekat.ai
+cekat.base-url=https://t.cekat.ai
 cekat.timeout=10s
 cekat.retry-count=2
 ```
@@ -921,7 +921,7 @@ cd java
 ./mvnw -B -ntp verify
 cd ..
 for text in \
-  'https://server.cekat.ai/api/events/ingest' \
+  'https://t.cekat.ai/api/events/ingest' \
   '_cekat_visitor_id' \
   'X-Cekat-Visitor-ID' \
   'accepted for asynchronous processing' \

@@ -21,7 +21,7 @@
 - Package coordinate is `@cekatai/event-sdk`; this plan prepares version `0.1.0` and does not publish.
 - Run Task 1 before dependency setup and again immediately before release. Record observed official runtime/framework versions; do not substitute projected patch versions.
 - Runtime policy covers maintained/LTS Node releases in roughly the preceding five years. CI minimum/current versions are selected from official release metadata; odd-numbered non-LTS lines are not promised.
-- Send only `POST <origin>/api/events/ingest`; default origin is `https://server.cekat.ai`; authorize with `Bearer <access_token>`; never put the token in browser exports, payloads, errors, logs, or snapshots.
+- Send only `POST <origin>/api/events/ingest`; default origin is `https://t.cekat.ai`; authorize with `Bearer <access_token>`; never put the token in browser exports, payloads, errors, logs, or snapshots.
 - A custom `baseURL` must be an absolute HTTP(S) origin with no credentials, non-root path, query, or fragment. Normalize one trailing slash away.
 - Default per-attempt timeout is 10 seconds. Default retry count is two after the initial attempt. Retry transport failures, SDK timeouts, and exact HTTP `500` only. Full-jitter waits are uniform `[0,100ms]` before retry one and `[0,200ms]` before retry two.
 - Caller `AbortSignal` cancellation interrupts requests and backoff, is never retried, and rethrows its reason or an `AbortError` without SDK wrapping. SDK timeout exhaustion is `TransportError` with unknown outcome.

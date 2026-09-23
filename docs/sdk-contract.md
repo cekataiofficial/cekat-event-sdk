@@ -11,7 +11,7 @@ A client needs only an access token. Create one client per application and reuse
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Access token | required | Server-side only. Never ship it to browser or mobile code. |
-| Base URL | `https://server.cekat.ai` | An absolute HTTP(S) origin without path, query, fragment, or credentials. |
+| Base URL | `https://t.cekat.ai` | An absolute HTTP(S) origin without path, query, fragment, or credentials. |
 | Timeout | 3 seconds per attempt | See [retries and errors](retry-and-error-semantics.md). |
 | Retry count | 2 retries after the first attempt | `0` disables retries. |
 | HTTP transport | the SDK's own | Most SDKs accept a caller-owned HTTP client or transport, which the SDK never closes. |
@@ -23,7 +23,7 @@ Invalid settings fail when the client is created.
 Every event is one HTTP request:
 
 ```http
-POST https://server.cekat.ai/api/events/ingest
+POST https://t.cekat.ai/api/events/ingest
 Authorization: Bearer <access token>
 Content-Type: application/json
 User-Agent: cekat-event-sdk-<language>/<version>
