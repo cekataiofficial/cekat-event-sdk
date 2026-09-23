@@ -31,8 +31,9 @@ import cekat "golang.cekat.ai/event-sdk"
 
 client, err := cekat.New(os.Getenv("CEKAT_ACCESS_TOKEN"))
 
-// Common event
+// Common events
 _, err = client.UserLogin(r.Context(), cekat.Event{Email: "ada@example.com"})
+_, err = client.FormSubmitted(r.Context(), cekat.Event{Email: "ada@example.com"})
 
 // Custom event
 _, err = client.CustomEvent(r.Context(), "trial_started", cekat.Event{
@@ -90,8 +91,9 @@ import { Client } from '@cekatai/event-sdk';
 
 const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
 
-// Common event
+// Common events
 await cekat.userLogin({ email: 'ada@example.com' });
+await cekat.formSubmitted({ email: 'ada@example.com' });
 
 // Custom event
 await cekat.customEvent('trial_started', { email: 'ada@example.com', properties: { plan: 'pro' } });
@@ -159,8 +161,9 @@ from cekat_event_sdk import Client, Event
 
 cekat = Client(os.environ["CEKAT_ACCESS_TOKEN"])   # AsyncClient offers the same methods with await
 
-# Common event
+# Common events
 cekat.user_login(Event(email="ada@example.com"))
+cekat.form_submitted(Event(email="ada@example.com"))
 
 # Custom event
 cekat.custom_event("trial_started", Event(email="ada@example.com", properties={"plan": "pro"}))
@@ -212,8 +215,9 @@ use Cekat\EventSdk\EventInput;
 
 $cekat = new Client(getenv('CEKAT_ACCESS_TOKEN'));
 
-// Common event
+// Common events
 $cekat->userLogin(new EventInput(email: 'ada@example.com'));
+$cekat->formSubmitted(new EventInput(email: 'ada@example.com'));
 
 // Custom event
 $cekat->customEvent('trial_started', new EventInput(email: 'ada@example.com', properties: ['plan' => 'pro']));
@@ -276,8 +280,9 @@ More: [php/README.md](php/README.md)
 ```java
 CekatClient cekat = new CekatClient(System.getenv("CEKAT_ACCESS_TOKEN"));
 
-// Common event
+// Common events
 cekat.userLogin(Event.builder().email("ada@example.com").build());
+cekat.formSubmitted(Event.builder().email("ada@example.com").build());
 
 // Custom event
 cekat.customEvent("trial_started", Event.builder().email("ada@example.com").property("plan", "pro").build());
@@ -326,8 +331,9 @@ using Cekat.EventSdk;
 
 var cekat = new CekatClient(new CekatClientOptions { AccessToken = Environment.GetEnvironmentVariable("CEKAT_ACCESS_TOKEN") });
 
-// Common event
+// Common events
 await cekat.UserLoginAsync(new EventInput(Email: "ada@example.com"));
+await cekat.FormSubmittedAsync(new EventInput(Email: "ada@example.com"));
 
 // Custom event
 await cekat.CustomEventAsync("trial_started", new EventInput(Email: "ada@example.com", Properties: new Dictionary<string, object?> { ["plan"] = "pro" }));
@@ -374,8 +380,9 @@ require "cekat_event_sdk"
 
 CEKAT = CekatEventSdk::Client.new(access_token: ENV.fetch("CEKAT_ACCESS_TOKEN"))
 
-# Common event
+# Common events
 CEKAT.user_login(email: "ada@example.com")
+CEKAT.form_submitted(email: "ada@example.com")
 
 # Custom event
 CEKAT.custom_event("trial_started", email: "ada@example.com", properties: { plan: "pro" })
@@ -405,7 +412,7 @@ The middleware also prefers a nonblank `X-Cekat-Visitor-ID` header over the cook
 
 ## Documentation
 
-- [SDK contract](docs/sdk-contract.md): client settings, the request and payload, the five operations, acknowledgements, and error categories shared by every SDK.
+- [SDK contract](docs/sdk-contract.md): client settings, the request and payload, the six operations (including `form_submitted`), acknowledgements, and error categories shared by every SDK.
 - [Visitor propagation](docs/visitor-propagation.md): how the browser visitor ID reaches events, precedence, the trust boundary, and each framework integration.
 - [Retries and errors](docs/retry-and-error-semantics.md): timeouts, retry rules, `Retry-After`, duplicates, response classification, and cancellation.
 - [Compatibility](docs/compatibility.md): supported runtimes and frameworks, generated from `ci/compatibility-matrix.json`.

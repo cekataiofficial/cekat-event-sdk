@@ -73,6 +73,7 @@ def test_common_method_sends_expected_request() -> None:
         ("user_registration", "user_registration", True),
         ("user_login", "user_login", True),
         ("order_created", "order_created", True),
+        ("form_submitted", "form_submitted", True),
     ],
 )
 def test_fixed_key_methods(method: str, key: str, is_common: bool) -> None:

@@ -37,7 +37,7 @@ if err != nil {
 log.Printf("accepted event %s: %s", ack.EventKey, ack.Message)
 ```
 
-The client exposes the common `UserRegistration`, `UserLogin`, `OrderCreated`, and `OrderPaid` methods. `OrderPaid(ctx, amount, currency, event)` additionally requires a finite `amount` and a nonblank `currency`, which are sent as the `amount` and `currency` properties; do not also put those keys in `Event.Properties`. For an event definition not represented by a common method, use `CustomEvent(ctx, eventKey, event)`.
+The client exposes the common `UserRegistration`, `UserLogin`, `OrderCreated`, `FormSubmitted`, and `OrderPaid` methods. `FormSubmitted(ctx, event)` sends `event_key: "form_submitted"` with `is_common: true`. `OrderPaid(ctx, amount, currency, event)` additionally requires a finite `amount` and a nonblank `currency`, which are sent as the `amount` and `currency` properties; do not also put those keys in `Event.Properties`. For an event definition not represented by a common method, use `CustomEvent(ctx, eventKey, event)`.
 
 `Acknowledgement` means the API accepted the event for asynchronous processing. It does **not** confirm durable storage, identity resolution, delivery completion, or analytics availability. Queue acknowledgement is not end-to-end delivery confirmation.
 

@@ -71,10 +71,11 @@ class CekatClientTest {
         client.userRegistration(event);
         client.userLogin(event);
         client.orderCreated(event);
+        client.formSubmitted(event);
         client.orderPaid(125.75, "IDR", event);
         client.customEvent("trial_started", event);
         List<List<Object>> summary = new ArrayList<>();
-        for (int index = 0; index < 5; index++) {
+        for (int index = 0; index < 6; index++) {
             Map<?, ?> payload = payload(transport, index);
             summary.add(List.of(payload.get("event_key"), payload.get("is_common"), Json.write(payload.get("properties"))));
         }
@@ -82,6 +83,7 @@ class CekatClientTest {
                 List.of("user_registration", true, "{\"order\":\"A-1\"}"),
                 List.of("user_login", true, "{\"order\":\"A-1\"}"),
                 List.of("order_created", true, "{\"order\":\"A-1\"}"),
+                List.of("form_submitted", true, "{\"order\":\"A-1\"}"),
                 List.of("order_paid", true, "{\"order\":\"A-1\",\"amount\":125.75,\"currency\":\"IDR\"}"),
                 List.of("trial_started", false, "{\"order\":\"A-1\"}")), summary);
     }

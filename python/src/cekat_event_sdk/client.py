@@ -64,6 +64,9 @@ class Client:
     def order_created(self, event: Event) -> Acknowledgement:
         return self._track("order_created", True, event)
 
+    def form_submitted(self, event: Event) -> Acknowledgement:
+        return self._track("form_submitted", True, event)
+
     def order_paid(self, amount: float | int | Decimal, currency: str, event: Event) -> Acknowledgement:
         """Track ``order_paid``; ``amount`` and ``currency`` are sent as properties."""
         return self._track("order_paid", True, with_order_paid_properties(amount, currency, event))

@@ -21,11 +21,12 @@ $cekat = new Client(getenv('CEKAT_ACCESS_TOKEN'));
 $cekat->userRegistration(new EventInput(email: 'person@example.com', contactName: 'Person'));
 $cekat->userLogin(new EventInput(phoneNumber: '+628123456789'));
 $cekat->orderCreated(new EventInput(email: 'person@example.com', properties: ['order_id' => 'o-1']));
+$cekat->formSubmitted(new EventInput(email: 'person@example.com', properties: ['form_id' => 'contact']));
 $cekat->orderPaid(125000, 'IDR', new EventInput(email: 'person@example.com', properties: ['order_id' => 'o-1']));
 $ack = $cekat->customEvent('wishlist_updated', new EventInput(email: 'person@example.com'));
 ```
 
-`orderPaid($amount, $currency, $event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
+`formSubmitted($event)` sends the common `form_submitted` event (`is_common: true`). `orderPaid($amount, $currency, $event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
 
 An `Acknowledgement` means Cekat accepted the event for **asynchronous processing**. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
 

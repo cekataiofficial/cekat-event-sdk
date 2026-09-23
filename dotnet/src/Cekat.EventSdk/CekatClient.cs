@@ -74,6 +74,12 @@ public sealed class CekatClient : IDisposable
     public Task<Acknowledgement> OrderCreatedAsync(EventInput input, CancellationToken cancellationToken = default) =>
         TrackAsync("order_created", true, () => input, cancellationToken);
 
+    /// <summary>Tracks <c>form_submitted</c>.</summary>
+    /// <exception cref="CekatException">The event was invalid, rejected, or could not be delivered.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public Task<Acknowledgement> FormSubmittedAsync(EventInput input, CancellationToken cancellationToken = default) =>
+        TrackAsync("form_submitted", true, () => input, cancellationToken);
+
     /// <summary>Tracks <c>order_paid</c>, sending <paramref name="amount"/> and <paramref name="currency"/> as properties.</summary>
     /// <param name="amount">The paid amount, sent as <c>properties.amount</c>.</param>
     /// <param name="currency">A nonblank currency, sent unchanged as <c>properties.currency</c>.</param>

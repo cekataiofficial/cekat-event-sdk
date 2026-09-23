@@ -37,6 +37,7 @@ try {
     client.userRegistration(event);
     client.userLogin(Event.builder().phoneNumber("+628123456789").build());
     client.orderCreated(event);
+    client.formSubmitted(event);
     client.orderPaid(new BigDecimal("125000"), "IDR", event);
     Acknowledgement acknowledgement = client.customEvent("wishlist_updated", event);
     System.out.println(acknowledgement.eventKey());
@@ -46,7 +47,7 @@ try {
 }
 ```
 
-`orderPaid(amount, currency, event)` additionally requires a finite `amount` (any `Number`, such as `BigDecimal`) and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in the event's properties.
+`formSubmitted(event)` sends the common `form_submitted` event (`is_common: true`). `orderPaid(amount, currency, event)` additionally requires a finite `amount` (any `Number`, such as `BigDecimal`) and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in the event's properties.
 
 Events are sent to `https://server.cekat.ai/api/events/ingest`. An `Acknowledgement` means Cekat accepted the event for asynchronous processing. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
 

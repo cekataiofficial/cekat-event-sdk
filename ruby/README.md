@@ -20,11 +20,12 @@ CEKAT = CekatEventSdk::Client.new(access_token: ENV.fetch("CEKAT_ACCESS_TOKEN"))
 CEKAT.user_registration(email: "person@example.com", contact_name: "Person")
 CEKAT.user_login(phone_number: "+628123456789")
 CEKAT.order_created(email: "person@example.com", properties: { order_id: "o-1" })
+CEKAT.form_submitted(email: "person@example.com", properties: { form_id: "contact" })
 CEKAT.order_paid(email: "person@example.com", properties: { order_id: "o-1" }, amount: 125_000, currency: "IDR")
 ack = CEKAT.custom_event("wishlist_updated", email: "person@example.com")
 ```
 
-Every event method also accepts a `CekatEventSdk::EventInput` or a Hash instead of keyword attributes. `order_paid` additionally requires a finite `amount:` (Integer, Float, BigDecimal, or Rational) and a nonblank `currency:`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
+`form_submitted` sends the common `form_submitted` event (`is_common: true`). Every event method also accepts a `CekatEventSdk::EventInput` or a Hash instead of keyword attributes. `order_paid` additionally requires a finite `amount:` (Integer, Float, BigDecimal, or Rational) and a nonblank `currency:`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
 
 An `Acknowledgement` means Cekat accepted the event for **asynchronous processing**. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
 

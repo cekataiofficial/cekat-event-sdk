@@ -98,6 +98,17 @@ public final class CekatClient {
     }
 
     /**
+     * Submits the common form_submitted event.
+     *
+     * @param event event
+     * @return acknowledgement
+     * @throws InterruptedException when the calling thread is interrupted
+     */
+    public Acknowledgement formSubmitted(Event event) throws InterruptedException {
+        return track("form_submitted", true, event);
+    }
+
+    /**
      * Submits the common order_paid event. The finite {@code amount} and nonblank {@code currency} are sent as the
      * {@code amount} and {@code currency} properties; the event's properties must not already contain either key.
      *

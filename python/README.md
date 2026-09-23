@@ -27,6 +27,7 @@ cekat = Client(os.environ["CEKAT_ACCESS_TOKEN"])
 ack = cekat.user_registration(Event(email="ada@example.com", contact_name="Ada Lovelace"))
 cekat.user_login(Event(email="ada@example.com"))
 cekat.order_created(Event(phone_number="+6281234567890", properties={"order_id": "ord_123"}))
+cekat.form_submitted(Event(email="ada@example.com", properties={"form_id": "contact"}))
 cekat.order_paid(125_000, "IDR", Event(email="ada@example.com", properties={"order_id": "ord_123"}))
 cekat.custom_event("trial_started", Event(email="ada@example.com", properties={"plan": "pro"}))
 
@@ -52,7 +53,7 @@ asyncio.run(main())
 
 Every event needs a nonblank `email` or `phone_number`. Identity strings are sent exactly as given; they are trimmed only to check that they are not blank.
 
-`order_paid(amount, currency, event)` sends `amount` (a finite `int`, `float`, or `Decimal`) and `currency` (a nonblank string, sent unchanged) as `properties.amount` and `properties.currency`. Passing either key in `properties` as well is a `ValidationError`.
+`form_submitted(event)` sends the common `form_submitted` event (`is_common: true`). `order_paid(amount, currency, event)` sends `amount` (a finite `int`, `float`, or `Decimal`) and `currency` (a nonblank string, sent unchanged) as `properties.amount` and `properties.currency`. Passing either key in `properties` as well is a `ValidationError`.
 
 `properties` accepts `None`, `bool`, `str`, finite numbers, lists, tuples, and dicts with string keys, nested to any reasonable depth. Integers (and integral floats) must be within ±9,007,199,254,740,991. Cycles, `datetime`, `set`, `bytes`, and other objects are rejected before anything is sent, and the error names the property path but never its value.
 

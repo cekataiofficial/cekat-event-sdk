@@ -89,6 +89,12 @@ final class Client
         return $this->track('order_created', true, $event);
     }
 
+    /** Submits the common form_submitted event. */
+    public function formSubmitted(EventInput $event): Acknowledgement
+    {
+        return $this->track('form_submitted', true, $event);
+    }
+
     /**
      * Submits the common order_paid event. The required finite $amount and nonblank $currency
      * are sent as the "amount" and "currency" properties; $event->properties must not already

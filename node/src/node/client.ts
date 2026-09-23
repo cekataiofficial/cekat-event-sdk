@@ -45,6 +45,10 @@ export class Client {
     return this.track('order_created', true, event, options);
   }
 
+  formSubmitted(event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
+    return this.track('form_submitted', true, event, options);
+  }
+
   /**
    * Submits the common order_paid event. The required `amount` (a finite number) and
    * `currency` (a nonblank string) are sent as the `amount` and `currency` properties;

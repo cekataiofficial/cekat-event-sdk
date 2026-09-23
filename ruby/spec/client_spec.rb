@@ -38,15 +38,17 @@ RSpec.describe CekatEventSdk::Client do
     subject.user_registration(event)
     subject.user_login({ email: "ada@example.test", properties: { order: "A-1" } })
     subject.order_created(email: "ada@example.test", properties: { order: "A-1" })
+    subject.form_submitted(event)
     subject.order_paid(event, amount: 125.75, currency: "IDR")
     subject.custom_event("trial_started", event)
 
-    summary = 5.times.map { |index| transport.payload(index).values_at("event_key", "is_common", "properties") }
+    summary = 6.times.map { |index| transport.payload(index).values_at("event_key", "is_common", "properties") }
     order = { "order" => "A-1" }
     expect(summary).to eq([
                             ["user_registration", true, order],
                             ["user_login", true, order],
                             ["order_created", true, order],
+                            ["form_submitted", true, order],
                             ["order_paid", true, order.merge("amount" => 125.75, "currency" => "IDR")],
                             ["trial_started", false, order]
                           ])

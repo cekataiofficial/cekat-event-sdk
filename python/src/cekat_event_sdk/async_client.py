@@ -65,6 +65,9 @@ class AsyncClient:
     async def order_created(self, event: Event) -> Acknowledgement:
         return await self._track("order_created", True, event)
 
+    async def form_submitted(self, event: Event) -> Acknowledgement:
+        return await self._track("form_submitted", True, event)
+
     async def order_paid(self, amount: float | int | Decimal, currency: str, event: Event) -> Acknowledgement:
         """Track ``order_paid``; ``amount`` and ``currency`` are sent as properties."""
         return await self._track("order_paid", True, with_order_paid_properties(amount, currency, event))
