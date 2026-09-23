@@ -143,6 +143,9 @@ func TestClientOperationsMapToExpectedPayload(t *testing.T) {
 		{"order created", func(c *Client) (*Acknowledgement, error) {
 			return c.OrderCreated(context.Background(), Event{Email: "ada@example.test"})
 		}, "order_created", true},
+		{"form submitted", func(c *Client) (*Acknowledgement, error) {
+			return c.FormSubmitted(context.Background(), Event{Email: "ada@example.test"})
+		}, "form_submitted", true},
 		{"order paid", func(c *Client) (*Acknowledgement, error) {
 			return c.OrderPaid(context.Background(), 125.75, "IDR", Event{Email: "ada@example.test"})
 		}, "order_paid", true},

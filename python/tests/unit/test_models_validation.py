@@ -38,7 +38,7 @@ def body(
 
 
 def test_package_exposes_initial_version_and_public_names() -> None:
-    assert cekat_event_sdk.__version__ == "0.2.0"
+    assert cekat_event_sdk.__version__ == "0.3.0"
     for name in cekat_event_sdk.__all__:
         assert hasattr(cekat_event_sdk, name)
 
@@ -237,7 +237,7 @@ def test_order_paid_unsafe_integer_amount_fails_ordinary_property_rules() -> Non
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("https://server.cekat.ai", "https://server.cekat.ai"),
+        ("https://t.cekat.ai", "https://t.cekat.ai"),
         ("HTTPS://Example.TEST:8443/", "https://example.test:8443"),
         ("http://127.0.0.1:1234", "http://127.0.0.1:1234"),
         ("http://[::1]:8080", "http://[::1]:8080"),
@@ -251,7 +251,7 @@ def test_origin_normalization(value: str, expected: str) -> None:
     "value",
     [
         "",
-        "server.cekat.ai",
+        "t.cekat.ai",
         "ftp://example.test",
         "https://user:pw@example.test",
         "https://example.test/api",

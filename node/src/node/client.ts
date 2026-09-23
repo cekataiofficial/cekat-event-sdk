@@ -4,7 +4,7 @@ import type { Acknowledgement, CallOptions, ClientOptions, EventInput, FetchLike
 import { buildPayload, validateAccessToken, withOrderPaidProperties } from './validation.js';
 import { currentVisitorId } from './visitor-context.js';
 
-const DEFAULT_ORIGIN = 'https://server.cekat.ai';
+const DEFAULT_ORIGIN = 'https://t.cekat.ai';
 const INGEST_PATH = '/api/events/ingest';
 const DEFAULT_TIMEOUT_MS = 3_000;
 const DEFAULT_RETRY_COUNT = 2;
@@ -43,6 +43,10 @@ export class Client {
 
   orderCreated(event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
     return this.track('order_created', true, event, options);
+  }
+
+  formSubmitted(event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
+    return this.track('form_submitted', true, event, options);
   }
 
   /**

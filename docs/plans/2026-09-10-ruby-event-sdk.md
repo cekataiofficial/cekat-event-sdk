@@ -91,7 +91,7 @@ ruby/
   ```ruby
   module CekatEventSdk
     VERSION = "0.1.0"
-    DEFAULT_BASE_URL = "https://server.cekat.ai"
+    DEFAULT_BASE_URL = "https://t.cekat.ai"
     INGEST_PATH = "/api/events/ingest"
     VISITOR_HEADER = "X-Cekat-Visitor-ID"
     VISITOR_COOKIE = "_cekat_visitor_id"

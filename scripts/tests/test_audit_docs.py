@@ -98,7 +98,7 @@ class AuditTest(unittest.TestCase):
             "Send Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345.": "token-like bearer credential",
             "Run npm publish when ready.": "publication command",
             "The SDK is now available on npm.": "publication claim",
-            "Point it at http://server.cekat.ai for testing.": "insecure production origin",
+            "Point it at http://t.cekat.ai for testing.": "insecure production origin",
             "Events go to /api/events/track.": "wrong ingest path",
             "The api.cekat.ai host also works.": "unknown Cekat host 'api.cekat.ai'",
             "Send the X-Cekat-Visitor-Id header.": "visitor header spelled 'X-Cekat-Visitor-Id'",

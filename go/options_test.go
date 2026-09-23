@@ -15,7 +15,7 @@ func TestNewUsesDocumentedDefaults(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if got, want := client.config.baseURL, "https://server.cekat.ai"; got != want {
+	if got, want := client.config.baseURL, "https://t.cekat.ai"; got != want {
 		t.Errorf("baseURL = %q, want %q", got, want)
 	}
 	if got, want := client.config.timeout, 3*time.Second; got != want {

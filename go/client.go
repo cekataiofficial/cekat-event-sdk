@@ -27,6 +27,11 @@ func (c *Client) OrderCreated(ctx context.Context, event Event) (*Acknowledgemen
 	return c.track(ctx, "order_created", true, event)
 }
 
+// FormSubmitted submits the common form_submitted event.
+func (c *Client) FormSubmitted(ctx context.Context, event Event) (*Acknowledgement, error) {
+	return c.track(ctx, "form_submitted", true, event)
+}
+
 // OrderPaid submits the common order_paid event. The required amount and
 // currency are sent as the "amount" and "currency" properties; event.Properties
 // must not already contain either key. amount must be finite and currency must

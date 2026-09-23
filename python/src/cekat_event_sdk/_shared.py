@@ -12,7 +12,7 @@ from .errors import TransportError
 from .protocol import BoundedBuffer, ReceivedResponse
 from .validation import normalize_origin, validate_access_token, validate_retry_count, validate_timeout
 
-DEFAULT_BASE_URL = "https://server.cekat.ai"
+DEFAULT_BASE_URL = "https://t.cekat.ai"
 DEFAULT_TIMEOUT = 3.0
 DEFAULT_RETRY_COUNT = 2
 INGEST_PATH = "/api/events/ingest"

@@ -11,7 +11,7 @@ public sealed class ValidationTests
     public void Options_use_approved_defaults()
     {
         var options = new CekatClientOptions { AccessToken = "token" };
-        Assert.Equal(new Uri("https://server.cekat.ai"), options.BaseUrl);
+        Assert.Equal(new Uri("https://t.cekat.ai"), options.BaseUrl);
         Assert.Equal(TimeSpan.FromSeconds(3), options.Timeout);
         Assert.Equal(2, options.RetryCount);
         Assert.Equal("/api/events/ingest", CekatConstants.IngestPath);

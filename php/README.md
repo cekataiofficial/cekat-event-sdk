@@ -21,11 +21,12 @@ $cekat = new Client(getenv('CEKAT_ACCESS_TOKEN'));
 $cekat->userRegistration(new EventInput(email: 'person@example.com', contactName: 'Person'));
 $cekat->userLogin(new EventInput(phoneNumber: '+628123456789'));
 $cekat->orderCreated(new EventInput(email: 'person@example.com', properties: ['order_id' => 'o-1']));
+$cekat->formSubmitted(new EventInput(email: 'person@example.com', properties: ['form_id' => 'contact']));
 $cekat->orderPaid(125000, 'IDR', new EventInput(email: 'person@example.com', properties: ['order_id' => 'o-1']));
 $ack = $cekat->customEvent('wishlist_updated', new EventInput(email: 'person@example.com'));
 ```
 
-`orderPaid($amount, $currency, $event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
+`formSubmitted($event)` sends the common `form_submitted` event (`is_common: true`). `orderPaid($amount, $currency, $event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
 
 An `Acknowledgement` means Cekat accepted the event for **asynchronous processing**. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
 
@@ -188,7 +189,7 @@ PHP has no portable caller cancellation, so bound each call with `timeoutSeconds
 ```php
 use Cekat\EventSdk\ClientOptions;
 
-$cekat = new Client($token, new ClientOptions(baseUrl: 'https://server.cekat.ai', timeoutSeconds: 3.0, retryCount: 2));
+$cekat = new Client($token, new ClientOptions(baseUrl: 'https://t.cekat.ai', timeoutSeconds: 3.0, retryCount: 2));
 ```
 
 `baseUrl` must be an absolute HTTP(S) origin without credentials, path, query, or fragment; the SDK always posts to `/api/events/ingest`. Requests send `User-Agent: cekat-event-sdk-php/<version>`.
@@ -198,7 +199,7 @@ The default `GuzzleTransport` enforces the per-attempt timeout (connection, head
 ## Local package preparation
 
 ```sh
-./scripts/package --version 0.2.0 --output /absolute/empty-directory
+./scripts/package --version 0.3.0 --output /absolute/empty-directory
 ```
 
 Runs `composer validate --strict`, installs dependencies, runs `composer audit`, the unit tests, PHPStan, and PHP-CS-Fixer, then writes a Composer archive and a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes. Because Packagist reads `composer.json` from a repository root, releases go through a generated mirror: pushing a `php/vX.Y.Z` tag makes the repository's `release-php.yml` workflow copy this directory to [cekataiofficial/cekat-event-sdk-php](https://github.com/cekataiofficial/cekat-event-sdk-php) and tag it `vX.Y.Z`, which is what Packagist reads. Development stays here. See the root release checklist.

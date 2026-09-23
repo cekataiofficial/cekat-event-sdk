@@ -26,17 +26,18 @@ import { Client } from '@cekatai/event-sdk';
 const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
 ```
 
-`Client` accepts a token only plus optional `{ baseURL, timeoutMs, retryCount, fetch }` options. `baseURL` must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The default is `https://server.cekat.ai`; each operation posts only to `/api/events/ingest` and identifies itself with `User-Agent: cekat-event-sdk-node/<version> <runtime>/<version>`, where the runtime is `node` or `bun`. The default timeout is 3 seconds per attempt and the default retry count is two after the initial request. Pass `{ signal }` to any event call to cancel without retrying.
+`Client` accepts a token only plus optional `{ baseURL, timeoutMs, retryCount, fetch }` options. `baseURL` must be an absolute HTTP(S) origin without credentials, path, query, or fragment. The default is `https://t.cekat.ai`; each operation posts only to `/api/events/ingest` and identifies itself with `User-Agent: cekat-event-sdk-node/<version> <runtime>/<version>`, where the runtime is `node` or `bun`. The default timeout is 3 seconds per attempt and the default retry count is two after the initial request. Pass `{ signal }` to any event call to cancel without retrying.
 
 ```ts
 await cekat.userRegistration({ email: 'person@example.test' });
 await cekat.userLogin({ phoneNumber: '+15551234567', visitorId: 'browser-visitor' });
 await cekat.orderCreated({ email: 'person@example.test', properties: { order_id: 'o-1' } });
+await cekat.formSubmitted({ email: 'person@example.test', properties: { form_id: 'contact' } });
 await cekat.orderPaid(125000, 'IDR', { email: 'person@example.test', properties: { order_id: 'o-1' } });
 await cekat.customEvent('wishlist_updated', { email: 'person@example.test', contactName: 'Ada' });
 ```
 
-`orderPaid(amount, currency, event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `event.properties`.
+`formSubmitted(event)` sends the common `form_submitted` event (`is_common: true`). `orderPaid(amount, currency, event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `event.properties`.
 
 A nonblank explicit `visitorId` takes precedence over request context; a blank explicit value falls back to context. Email and phone are retained as submitted but at least one must be nonblank. Event properties are JSON values only (finite safe numbers, arrays, and plain objects); convert values such as `Date` to strings first.
 
@@ -213,7 +214,7 @@ The automatic interceptor covers browser global `fetch` and `XMLHttpRequest` onl
 ## Local no-publish package preparation
 
 ```sh
-./scripts/package --version 0.2.0 --output /absolute/empty-directory
+./scripts/package --version 0.3.0 --output /absolute/empty-directory
 ```
 
 Bun support is verified separately with `npm run test:bun` (the test suites on Bun, including the Bun-only `test/bun` servers) and `CEKAT_NODE_RUNTIME=bun scripts/conformance` (the shared conformance fixtures on Bun). Both use Node.js and npm for installation and type checking.

@@ -27,6 +27,7 @@ cekat = Client(os.environ["CEKAT_ACCESS_TOKEN"])
 ack = cekat.user_registration(Event(email="ada@example.com", contact_name="Ada Lovelace"))
 cekat.user_login(Event(email="ada@example.com"))
 cekat.order_created(Event(phone_number="+6281234567890", properties={"order_id": "ord_123"}))
+cekat.form_submitted(Event(email="ada@example.com", properties={"form_id": "contact"}))
 cekat.order_paid(125_000, "IDR", Event(email="ada@example.com", properties={"order_id": "ord_123"}))
 cekat.custom_event("trial_started", Event(email="ada@example.com", properties={"plan": "pro"}))
 
@@ -52,7 +53,7 @@ asyncio.run(main())
 
 Every event needs a nonblank `email` or `phone_number`. Identity strings are sent exactly as given; they are trimmed only to check that they are not blank.
 
-`order_paid(amount, currency, event)` sends `amount` (a finite `int`, `float`, or `Decimal`) and `currency` (a nonblank string, sent unchanged) as `properties.amount` and `properties.currency`. Passing either key in `properties` as well is a `ValidationError`.
+`form_submitted(event)` sends the common `form_submitted` event (`is_common: true`). `order_paid(amount, currency, event)` sends `amount` (a finite `int`, `float`, or `Decimal`) and `currency` (a nonblank string, sent unchanged) as `properties.amount` and `properties.currency`. Passing either key in `properties` as well is a `ValidationError`.
 
 `properties` accepts `None`, `bool`, `str`, finite numbers, lists, tuples, and dicts with string keys, nested to any reasonable depth. Integers (and integral floats) must be within ±9,007,199,254,740,991. Cycles, `datetime`, `set`, `bytes`, and other objects are rejected before anything is sent, and the error names the property path but never its value.
 
@@ -230,7 +231,7 @@ Error messages never include the access token or request headers, and client `re
 | Argument | Default | |
 | --- | --- | --- |
 | `access_token` | required | Server-side Cekat access token. |
-| `base_url` | `https://server.cekat.ai` | Absolute HTTP(S) origin without path, query, fragment, or credentials. |
+| `base_url` | `https://t.cekat.ai` | Absolute HTTP(S) origin without path, query, fragment, or credentials. |
 | `timeout` | `3.0` | Seconds per attempt, covering the connection, response headers, and response body. |
 | `retry_count` | `2` | Retries after the first attempt; `0` disables retries. |
 | `http_client` | SDK-owned | Your own `httpx.Client` / `httpx.AsyncClient` (proxies, TLS, limits). Never closed by the SDK. |
@@ -246,7 +247,7 @@ python3 -m venv .venv
 .venv/bin/python -m ruff check src tests && .venv/bin/python -m ruff format --check src tests
 .venv/bin/python -m mypy
 ../scripts/conformance.sh --language python  # shared contract against the mock ingest server
-.venv/bin/python scripts/package --version 0.2.0 --output /absolute/empty/dir
+.venv/bin/python scripts/package --version 0.3.0 --output /absolute/empty/dir
 ```
 
 `pip install -c constraints-lowest.txt -e ".[test,django,flask,asgi,fastapi]"` installs the declared dependency floors. `scripts/package` runs every check plus `pip-audit`, builds the wheel and sdist, runs `twine check`, and writes a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes; releases to PyPI run from the repository's `release-python.yml` workflow when a `python/vX.Y.Z` tag is pushed. See [docs/compatibility.md](docs/compatibility.md) for supported versions.

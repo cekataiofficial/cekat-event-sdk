@@ -107,7 +107,7 @@ final readonly class Acknowledgement {
 
 final readonly class ClientOptions {
     public function __construct(
-        public string $baseUrl = 'https://server.cekat.ai',
+        public string $baseUrl = 'https://t.cekat.ai',
         public float $timeoutSeconds = 10.0,
         public int $retryCount = 2,
     ) {}

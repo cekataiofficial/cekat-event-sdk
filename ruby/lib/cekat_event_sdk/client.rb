@@ -48,6 +48,10 @@ module CekatEventSdk
       track("order_created", true, event_from(event, attributes))
     end
 
+    def form_submitted(event = nil, **attributes)
+      track("form_submitted", true, event_from(event, attributes))
+    end
+
     # The required finite amount and nonblank currency are sent as the "amount" and "currency"
     # properties; the event's properties must not already contain either key.
     def order_paid(event = nil, amount:, currency:, **attributes)

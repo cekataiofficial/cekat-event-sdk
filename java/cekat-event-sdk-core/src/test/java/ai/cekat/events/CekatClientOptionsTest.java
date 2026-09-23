@@ -14,8 +14,8 @@ class CekatClientOptionsTest {
     @Test
     void defaultsAndOriginNormalization() {
         CekatClientOptions defaults = CekatClientOptions.defaults();
-        assertEquals(URI.create("https://server.cekat.ai"), defaults.baseUrl());
-        assertEquals(URI.create("https://server.cekat.ai/api/events/ingest"), defaults.ingestUri());
+        assertEquals(URI.create("https://t.cekat.ai"), defaults.baseUrl());
+        assertEquals(URI.create("https://t.cekat.ai/api/events/ingest"), defaults.ingestUri());
         assertEquals(Duration.ofSeconds(3), defaults.timeout());
         assertEquals(2, defaults.retryCount());
         assertEquals(URI.create("http://127.0.0.1:8080/api/events/ingest"),
@@ -26,9 +26,9 @@ class CekatClientOptionsTest {
 
     @Test
     void rejectsInvalidOptionsWithoutEchoingTokens() {
-        for (String baseUrl : List.of("server.cekat.ai", "ftp://server.cekat.ai", "https://user:secret-token@server.cekat.ai",
-                "https://server.cekat.ai/events", "https://server.cekat.ai/root/", "https://server.cekat.ai/?q=1",
-                "https://server.cekat.ai/#frag", "https://", "not a uri")) {
+        for (String baseUrl : List.of("t.cekat.ai", "ftp://t.cekat.ai", "https://user:secret-token@t.cekat.ai",
+                "https://t.cekat.ai/events", "https://t.cekat.ai/root/", "https://t.cekat.ai/?q=1",
+                "https://t.cekat.ai/#frag", "https://", "not a uri")) {
             ValidationException error = assertThrows(ValidationException.class, () -> CekatClientOptions.builder().baseUrl(baseUrl).build());
             assertTrue(error.getMessage().contains("base URL") && !error.getMessage().contains("secret-token"), baseUrl);
         }

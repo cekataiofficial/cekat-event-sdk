@@ -16,7 +16,7 @@
 
 ## Global Constraints
 
-- The only ingest path is `POST /api/events/ingest`; the production origin remains `https://server.cekat.ai`.
+- The only ingest path is `POST /api/events/ingest`; the production origin remains `https://t.cekat.ai`.
 - Authorization is `Bearer <access_token>`; fixtures and journals must never place a real token in expected diagnostics.
 - Default timeout is 10 seconds **per network attempt**. Caller cancellation bounds the full operation and interrupts request/backoff where the runtime supports it.
 - Default retry count is 2 after the initial attempt. Retry only transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `500`.

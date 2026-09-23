@@ -32,11 +32,11 @@ final class PackageScriptTest extends TestCase
         try {
             foreach ([
                 [],
-                ['--version', '0.2.0'],
+                ['--version', '0.3.0'],
                 ['--version', '0.1.1', '--output', sys_get_temp_dir()],
-                ['--version', '0.2.0', '--output', 'relative'],
-                ['--version', '0.2.0', '--output', sys_get_temp_dir() . '/../tmp'],
-                ['--version', '0.2.0', '--output', $output],
+                ['--version', '0.3.0', '--output', 'relative'],
+                ['--version', '0.3.0', '--output', sys_get_temp_dir() . '/../tmp'],
+                ['--version', '0.3.0', '--output', $output],
             ] as $arguments) {
                 [$status, $message] = $this->runScript($arguments);
                 self::assertSame(2, $status, implode(' ', $arguments) . ': ' . $message);

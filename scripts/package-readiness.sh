@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds local 0.2.0 package artifacts through each language's no-publish scripts/package and validates
+# Builds local 0.3.0 package artifacts through each language's no-publish scripts/package and validates
 # every manifest. It never publishes, signs, tags, pushes, or reads registry credentials.
 #
 #   scripts/package-readiness.sh --language <go|node|python|php|java|dotnet|ruby> --output <absolute-empty-directory>
@@ -9,7 +9,7 @@
 # going after a failure so every problem is reported, and finally validates the complete aggregate.
 set -Eeuo pipefail
 
-readonly VERSION=0.2.0
+readonly VERSION=0.3.0
 readonly LANGUAGES=(go node python php java dotnet ruby)
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly ROOT

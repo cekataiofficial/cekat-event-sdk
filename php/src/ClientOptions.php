@@ -11,7 +11,7 @@ use Cekat\EventSdk\Exception\ValidationException;
  */
 final readonly class ClientOptions
 {
-    public const DEFAULT_BASE_URL = 'https://server.cekat.ai';
+    public const DEFAULT_BASE_URL = 'https://t.cekat.ai';
 
     /** Absolute HTTP(S) origin without a trailing slash. */
     public string $baseUrl;

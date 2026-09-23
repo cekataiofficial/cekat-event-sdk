@@ -27,7 +27,7 @@ import java.util.OptionalLong;
  */
 public final class CekatClient {
     /** SDK version reported in the User-Agent header. */
-    public static final String VERSION = "0.2.0";
+    public static final String VERSION = "0.3.0";
 
     private final String accessToken;
     private final CekatClientOptions options;
@@ -95,6 +95,17 @@ public final class CekatClient {
      */
     public Acknowledgement orderCreated(Event event) throws InterruptedException {
         return track("order_created", true, event);
+    }
+
+    /**
+     * Submits the common form_submitted event.
+     *
+     * @param event event
+     * @return acknowledgement
+     * @throws InterruptedException when the calling thread is interrupted
+     */
+    public Acknowledgement formSubmitted(Event event) throws InterruptedException {
+        return track("form_submitted", true, event);
     }
 
     /**

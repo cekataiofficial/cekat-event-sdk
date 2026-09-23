@@ -12,7 +12,7 @@ import java.util.function.LongUnaryOperator;
 /** Optional client configuration. Invalid values throw {@link ValidationException} from {@link Builder#build()}. */
 public final class CekatClientOptions {
     /** Production origin. */
-    public static final URI DEFAULT_BASE_URL = URI.create("https://server.cekat.ai");
+    public static final URI DEFAULT_BASE_URL = URI.create("https://t.cekat.ai");
     /** Default per-attempt timeout. */
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(3);
     /** Default retries after the initial attempt. */

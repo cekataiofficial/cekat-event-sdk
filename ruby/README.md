@@ -20,11 +20,12 @@ CEKAT = CekatEventSdk::Client.new(access_token: ENV.fetch("CEKAT_ACCESS_TOKEN"))
 CEKAT.user_registration(email: "person@example.com", contact_name: "Person")
 CEKAT.user_login(phone_number: "+628123456789")
 CEKAT.order_created(email: "person@example.com", properties: { order_id: "o-1" })
+CEKAT.form_submitted(email: "person@example.com", properties: { form_id: "contact" })
 CEKAT.order_paid(email: "person@example.com", properties: { order_id: "o-1" }, amount: 125_000, currency: "IDR")
 ack = CEKAT.custom_event("wishlist_updated", email: "person@example.com")
 ```
 
-Every event method also accepts a `CekatEventSdk::EventInput` or a Hash instead of keyword attributes. `order_paid` additionally requires a finite `amount:` (Integer, Float, BigDecimal, or Rational) and a nonblank `currency:`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
+`form_submitted` sends the common `form_submitted` event (`is_common: true`). Every event method also accepts a `CekatEventSdk::EventInput` or a Hash instead of keyword attributes. `order_paid` additionally requires a finite `amount:` (Integer, Float, BigDecimal, or Rational) and a nonblank `currency:`, sent as the `amount` and `currency` properties; do not also put those keys in `properties`.
 
 An `Acknowledgement` means Cekat accepted the event for **asynchronous processing**. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
 
@@ -131,7 +132,7 @@ Transport failures, timeouts, and HTTP 429, 500, 502, 503, and 504 are retried, 
 ## Configuration
 
 ```ruby
-CekatEventSdk::Client.new(access_token: token, base_url: "https://server.cekat.ai", timeout: 3, retry_count: 2)
+CekatEventSdk::Client.new(access_token: token, base_url: "https://t.cekat.ai", timeout: 3, retry_count: 2)
 ```
 
 `base_url` must be an absolute HTTP(S) origin without credentials, path, query, or fragment; the SDK always posts to `/api/events/ingest`. Requests send `User-Agent: cekat-event-sdk-ruby/<version>`.
@@ -144,7 +145,7 @@ The Net::HTTP transport opens a fresh connection per attempt, never follows redi
 bundle install
 bundle exec rake            # core, Rack, and Rails specs plus RuboCop
 RAILS_VERSION="~> 8.0.0" RACK_VERSION="~> 2.2" bundle update && bundle exec rake spec
-./scripts/package --version 0.2.0 --output /absolute/empty-directory
+./scripts/package --version 0.3.0 --output /absolute/empty-directory
 ```
 
 `scripts/package` runs the specs, RuboCop, and `bundle-audit`, then builds the gem and a SHA-256 `manifest.json`. It never pushes, signs, or tags; releases to RubyGems run from the repository's `release-ruby.yml` workflow when a `ruby/vX.Y.Z` tag is pushed. `scripts/conformance` runs the shared conformance fixtures (see `conformance/README.md`); the three caller-cancellation cases are reported as `not_applicable` for Ruby.

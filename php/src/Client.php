@@ -31,7 +31,7 @@ use Cekat\EventSdk\Transport\TransportRequest;
  */
 final class Client
 {
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.3.0';
 
     private const INGEST_PATH = '/api/events/ingest';
 
@@ -87,6 +87,12 @@ final class Client
     public function orderCreated(EventInput $event): Acknowledgement
     {
         return $this->track('order_created', true, $event);
+    }
+
+    /** Submits the common form_submitted event. */
+    public function formSubmitted(EventInput $event): Acknowledgement
+    {
+        return $this->track('form_submitted', true, $event);
     }
 
     /**

@@ -4,7 +4,7 @@ require_relative "cekat_event_sdk/version"
 
 # Cekat event SDK: submit identity-bearing events and correlate them with the browser visitor.
 module CekatEventSdk
-  DEFAULT_BASE_URL = "https://server.cekat.ai"
+  DEFAULT_BASE_URL = "https://t.cekat.ai"
   INGEST_PATH = "/api/events/ingest"
   VISITOR_HEADER = "X-Cekat-Visitor-ID"
   VISITOR_COOKIE = "_cekat_visitor_id"

@@ -55,7 +55,7 @@ describe('Client configuration', () => {
       validatedProperties: ['email'],
       rawBody: acknowledgement('user_login'),
     });
-    expect(fetch).toHaveBeenCalledWith('https://server.cekat.ai/api/events/ingest', expect.objectContaining({
+    expect(fetch).toHaveBeenCalledWith('https://t.cekat.ai/api/events/ingest', expect.objectContaining({
       headers: expect.objectContaining({ authorization: 'Bearer token-not-in-payload' }),
     }));
 
@@ -65,12 +65,12 @@ describe('Client configuration', () => {
   it('accepts only absolute HTTP(S) origins and validates delivery options before use', () => {
     const fetch = successfulFetch();
     for (const baseURL of [
-      'server.cekat.ai',
-      'ftp://server.cekat.ai',
-      'https://user:password@server.cekat.ai',
-      'https://server.cekat.ai/events',
-      'https://server.cekat.ai/?query=value',
-      'https://server.cekat.ai/#fragment',
+      't.cekat.ai',
+      'ftp://t.cekat.ai',
+      'https://user:password@t.cekat.ai',
+      'https://t.cekat.ai/events',
+      'https://t.cekat.ai/?query=value',
+      'https://t.cekat.ai/#fragment',
       'https://:443',
     ]) {
       expect(validationError(() => new Client('token', { baseURL, fetch })).message).toContain('baseURL');
@@ -153,7 +153,7 @@ describe('Client configuration', () => {
 });
 
 describe('Client event facade', () => {
-  it('maps all five methods to their exact keys and common flags, without business_id', async () => {
+  it('maps all six methods to their exact keys and common flags, without business_id', async () => {
     const fetch = successfulFetch();
     const client = new Client('token', { fetch });
     const event = { email: 'ada@example.test', properties: { order: 'A-1' } };
@@ -162,6 +162,7 @@ describe('Client event facade', () => {
       client.userRegistration(event),
       client.userLogin(event),
       client.orderCreated(event),
+      client.formSubmitted(event),
       client.orderPaid(125.75, 'IDR', event),
       client.customEvent('trial_started', event),
     ]);
@@ -170,6 +171,7 @@ describe('Client event facade', () => {
       expect.objectContaining({ success: true, eventKey: 'user_registration' }),
       expect.objectContaining({ success: true, eventKey: 'user_login' }),
       expect.objectContaining({ success: true, eventKey: 'order_created' }),
+      expect.objectContaining({ success: true, eventKey: 'form_submitted' }),
       expect.objectContaining({ success: true, eventKey: 'order_paid' }),
       expect.objectContaining({ success: true, eventKey: 'trial_started' }),
     ]);
@@ -177,6 +179,7 @@ describe('Client event facade', () => {
       { event_key: 'user_registration', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
       { event_key: 'user_login', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
       { event_key: 'order_created', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
+      { event_key: 'form_submitted', is_common: true, email: 'ada@example.test', properties: { order: 'A-1' } },
       { event_key: 'order_paid', is_common: true, email: 'ada@example.test', properties: { order: 'A-1', amount: 125.75, currency: 'IDR' } },
       { event_key: 'trial_started', is_common: false, email: 'ada@example.test', properties: { order: 'A-1' } },
     ]);

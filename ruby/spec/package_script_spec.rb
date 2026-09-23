@@ -12,12 +12,12 @@ RSpec.describe "scripts/package" do
       File.write(File.join(dirty, "stale.gem"), "stale")
       [
         [],
-        ["--version", "0.2.0"],
+        ["--version", "0.3.0"],
         ["--version", "0.1.1", "--output", Dir.tmpdir],
-        ["--version", "0.2.0", "--output", "relative"],
-        ["--version", "0.2.0", "--output", "#{Dir.tmpdir}/../tmp"],
-        ["--version", "0.2.0", "--output", dirty],
-        ["--version", "0.2.0", "--output", File.expand_path("../pkg-output", __dir__)]
+        ["--version", "0.3.0", "--output", "relative"],
+        ["--version", "0.3.0", "--output", "#{Dir.tmpdir}/../tmp"],
+        ["--version", "0.3.0", "--output", dirty],
+        ["--version", "0.3.0", "--output", File.expand_path("../pkg-output", __dir__)]
       ].each do |arguments|
         output, status = Open3.capture2e(RbConfig.ruby, script, *arguments)
         expect(status.exitstatus).to eq(2), "#{arguments.inspect}: #{output}"

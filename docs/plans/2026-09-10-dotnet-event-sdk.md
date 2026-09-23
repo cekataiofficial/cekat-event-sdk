@@ -116,7 +116,7 @@ dotnet/
   namespace Cekat.EventSdk;
   public static class CekatConstants
   {
-      public const string DefaultBaseUrl = "https://server.cekat.ai";
+      public const string DefaultBaseUrl = "https://t.cekat.ai";
       public const string IngestPath = "/api/events/ingest";
       public const string VisitorCookie = "_cekat_visitor_id";
       public const string VisitorHeader = "X-Cekat-Visitor-ID";
@@ -184,7 +184,7 @@ dotnet/
   public void Options_use_approved_defaults()
   {
       var options = new CekatClientOptions { AccessToken = "token" };
-      Assert.Equal(new Uri("https://server.cekat.ai"), options.BaseUrl);
+      Assert.Equal(new Uri("https://t.cekat.ai"), options.BaseUrl);
       Assert.Equal(TimeSpan.FromSeconds(10), options.Timeout);
       Assert.Equal(2, options.RetryCount);
       Assert.Equal("/api/events/ingest", CekatConstants.IngestPath);

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://server.cekat.ai"
+	defaultBaseURL = "https://t.cekat.ai"
 	defaultTimeout = 3 * time.Second
 )
 

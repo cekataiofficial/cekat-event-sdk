@@ -47,15 +47,17 @@ class Harness:
 
 @pytest.mark.asyncio
 async def test_async_methods_mirror_sync_payloads() -> None:
-    harness = Harness(ok("order_paid"), ok("user_login"), ok("custom"))
+    harness = Harness(ok("order_paid"), ok("user_login"), ok("form_submitted"), ok("custom"))
     await harness.sdk.order_paid(10, "USD", Event(email="a"))
     with visitor_scope("v"):
         await harness.sdk.user_login(Event(email="a"))
+    await harness.sdk.form_submitted(Event(email="a"))
     await harness.sdk.custom_event("custom", Event(email="a"))
     bodies = [payload(request) for request in harness.requests]
     assert bodies[0]["properties"] == {"amount": 10, "currency": "USD"}
     assert (bodies[1]["is_common"], bodies[1]["visitor_id"]) == (True, "v")
-    assert bodies[2]["is_common"] is False
+    assert (bodies[2]["event_key"], bodies[2]["is_common"]) == ("form_submitted", True)
+    assert bodies[3]["is_common"] is False
 
 
 @pytest.mark.asyncio

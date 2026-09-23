@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cekat-event-sdk"
-version = "0.2.0"
+version = "0.3.0"
 description = "Submit identity-bearing Cekat events from Python backends with browser visitor correlation."
 readme = "README.md"
 license = "MIT"

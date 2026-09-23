@@ -31,7 +31,7 @@ function assertManifest(output) {
   assert.deepEqual(Object.keys(manifest).sort(), ['artifacts', 'language', 'schema_version', 'version']);
   assert.equal(manifest.schema_version, 1);
   assert.equal(manifest.language, 'node');
-  assert.equal(manifest.version, '0.2.0');
+  assert.equal(manifest.version, '0.3.0');
   assert.ok(manifest.artifacts.length > 0);
 
   const paths = manifest.artifacts.map((artifact) => artifact.path);
@@ -55,22 +55,22 @@ test('rejects malformed, unsafe, and dirty output requests before package valida
     return;
   }
   assert.equal(run([]).status, 2);
-  assert.equal(run(['--version', '0.2.0', '--output', 'relative']).status, 2);
+  assert.equal(run(['--version', '0.3.0', '--output', 'relative']).status, 2);
   assert.equal(run(['--version', '0.1.1', '--output', '/tmp/cekat-package-test']).status, 2);
-  assert.equal(run(['--version', '0.2.0', '--output', '/tmp/../tmp/cekat-package-test']).status, 2);
-  assert.equal(run(['--version', '0.2.0', '--output', root]).status, 2);
+  assert.equal(run(['--version', '0.3.0', '--output', '/tmp/../tmp/cekat-package-test']).status, 2);
+  assert.equal(run(['--version', '0.3.0', '--output', root]).status, 2);
 
   const output = mkdtempSync(join(tmpdir(), 'cekat-package-dirty-'));
   const symlinkOutput = mkdtempSync(join(tmpdir(), 'cekat-package-symlink-'));
   const linkedOutput = `${symlinkOutput}-link`;
   try {
     writeFileSync(join(output, 'stale-generated-artifact.tgz'), 'stale');
-    const dirtyResult = run(['--version', '0.2.0', '--output', output]);
+    const dirtyResult = run(['--version', '0.3.0', '--output', output]);
     assert.equal(dirtyResult.status, 2);
     assert.match(dirtyResult.stderr, /empty/i);
 
     symlinkSync(symlinkOutput, linkedOutput);
-    const symlinkResult = run(['--version', '0.2.0', '--output', linkedOutput]);
+    const symlinkResult = run(['--version', '0.3.0', '--output', linkedOutput]);
     assert.equal(symlinkResult.status, 2);
     assert.match(symlinkResult.stderr, /symbolic link/i);
   } finally {
@@ -89,7 +89,7 @@ test('creates deterministic, hashed no-publish artifacts', { timeout: 900_000 },
   const second = mkdtempSync(join(tmpdir(), 'cekat-package-second-'));
   try {
     for (const output of [first, second]) {
-      const result = run(['--version', '0.2.0', '--output', output]);
+      const result = run(['--version', '0.3.0', '--output', output]);
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     }
 

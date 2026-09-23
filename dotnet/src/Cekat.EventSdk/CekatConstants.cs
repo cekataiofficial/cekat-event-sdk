@@ -4,7 +4,7 @@ namespace Cekat.EventSdk;
 public static class CekatConstants
 {
     /// <summary>The production Cekat origin.</summary>
-    public const string DefaultBaseUrl = "https://server.cekat.ai";
+    public const string DefaultBaseUrl = "https://t.cekat.ai";
 
     /// <summary>The ingest endpoint path appended to the configured origin.</summary>
     public const string IngestPath = "/api/events/ingest";
@@ -19,5 +19,5 @@ public static class CekatConstants
     public const int MaximumResponseBodyBytes = 65_536;
 
     /// <summary>The SDK version sent in the User-Agent header.</summary>
-    public const string Version = "0.2.0";
+    public const string Version = "0.3.0";
 }

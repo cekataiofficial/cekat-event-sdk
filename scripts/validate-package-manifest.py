@@ -2,7 +2,7 @@
 """Validate the manifest.json written by <language>/scripts/package.
 
 Single manifest:
-    scripts/validate-package-manifest.py <output>/manifest.json --language <language> --version 0.2.0
+    scripts/validate-package-manifest.py <output>/manifest.json --language <language> --version 0.3.0
 
 All seven languages (one child directory per language, as produced by scripts/package-readiness.sh --all):
     scripts/validate-package-manifest.py --all <aggregate-root> [--markdown]
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 LANGUAGES = ("go", "node", "python", "php", "java", "dotnet", "ruby")
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 MANIFEST_NAME = "manifest.json"
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 CHUNK_BYTES = 1024 * 1024

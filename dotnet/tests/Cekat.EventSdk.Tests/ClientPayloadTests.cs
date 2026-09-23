@@ -21,7 +21,7 @@ public sealed class ClientPayloadTests
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.Equal("secret-token", request.Headers.Authorization.Parameter);
         Assert.Equal("application/json", request.Content!.Headers.ContentType!.ToString());
-        Assert.Matches(@"^cekat-event-sdk-dotnet/0\.2\.0 dotnet/\d+\.\d+\.\d+", string.Join(" ", request.Headers.GetValues("User-Agent")));
+        Assert.Matches(@"^cekat-event-sdk-dotnet/0\.3\.0 dotnet/\d+\.\d+\.\d+", string.Join(" ", request.Headers.GetValues("User-Agent")));
 
         var body = handler.Body;
         Assert.Equal("order_paid", body.GetProperty("event_key").GetString());
@@ -40,6 +40,7 @@ public sealed class ClientPayloadTests
     [InlineData("user_registration", true)]
     [InlineData("user_login", true)]
     [InlineData("order_created", true)]
+    [InlineData("form_submitted", true)]
     [InlineData("signup_step", false)]
     public async Task Wrappers_send_fixed_keys(string eventKey, bool isCommon)
     {
@@ -51,6 +52,7 @@ public sealed class ClientPayloadTests
             "user_registration" => client.UserRegistrationAsync(input),
             "user_login" => client.UserLoginAsync(input),
             "order_created" => client.OrderCreatedAsync(input),
+            "form_submitted" => client.FormSubmittedAsync(input),
             _ => client.CustomEventAsync(eventKey, input),
         });
         Assert.Equal(eventKey, handler.Body.GetProperty("event_key").GetString());

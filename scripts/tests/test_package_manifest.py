@@ -49,7 +49,7 @@ def write_package(output: Path, language: str, files: dict[str, bytes], **overri
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(files[path])
         artifacts.append({"path": path, "sha256": hashlib.sha256(files[path]).hexdigest(), "size_bytes": len(files[path])})
-    manifest = {"schema_version": 1, "language": language, "version": "0.2.0", "artifacts": artifacts}
+    manifest = {"schema_version": 1, "language": language, "version": "0.3.0", "artifacts": artifacts}
     manifest.update(overrides)
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return output / "manifest.json"
@@ -229,9 +229,9 @@ class ManifestValidatorTest(unittest.TestCase):
         manifest = write_package(self.root / "go", "go", {"go.zip": b"go"})
         run = lambda *arguments: subprocess.run([sys.executable, str(VALIDATOR), *arguments], capture_output=True, text=True, check=False)
         self.assertEqual(run("--help").returncode, 0)
-        ok = run(str(manifest), "--language", "go", "--version", "0.2.0")
+        ok = run(str(manifest), "--language", "go", "--version", "0.3.0")
         self.assertEqual((ok.returncode, ok.stdout.strip().startswith("go: 1 artifact(s) verified")), (0, True))
-        self.assertEqual(run(str(manifest), "--language", "node", "--version", "0.2.0").returncode, 1)
+        self.assertEqual(run(str(manifest), "--language", "node", "--version", "0.3.0").returncode, 1)
         self.assertEqual(run(str(manifest), "--language", "go", "--version", "1.0.0").returncode, 2)
         self.assertEqual(run(str(manifest), "--language", "go").returncode, 2)
         self.assertEqual(run("--all", str(self.root), "--language", "go").returncode, 2)
@@ -269,7 +269,7 @@ root = pathlib.Path(__file__).resolve().parents[2]
 with open(root / "order.log", "a") as log:
     log.write(language + "\n")
 assert sys.argv[1:4:2] == ["--version", "--output"] and len(sys.argv) == 5, sys.argv
-assert sys.argv[2] == "0.2.0", sys.argv
+assert sys.argv[2] == "0.3.0", sys.argv
 output = pathlib.Path(sys.argv[4])
 assert output.is_dir() and not any(output.iterdir()), "output must be an existing empty directory"
 behaviour = (root / f"{language}.behaviour").read_text().strip() if (root / f"{language}.behaviour").exists() else "ok"
@@ -279,11 +279,11 @@ if behaviour == "sleep":
     (root / f"{language}.started").write_text(str(os.getpid()))
     time.sleep(60)
 body = f"{language} artifact".encode()
-(output / f"{language}-0.2.0.pkg").write_bytes(body)
+(output / f"{language}-0.3.0.pkg").write_bytes(body)
 digest = hashlib.sha256(body).hexdigest()
 if behaviour == "bad-hash":
     digest = "0" * 64
-manifest = {"schema_version": 1, "language": language, "version": "0.2.0", "artifacts": [{"path": f"{language}-0.2.0.pkg", "sha256": digest, "size_bytes": len(body)}]}
+manifest = {"schema_version": 1, "language": language, "version": "0.3.0", "artifacts": [{"path": f"{language}-0.3.0.pkg", "sha256": digest, "size_bytes": len(body)}]}
 (output / "manifest.json").write_text(json.dumps(manifest))
 '''
 
@@ -330,7 +330,7 @@ class PackageReadinessWrapperTest(unittest.TestCase):
             [],
             ["--all"],
             ["--language", "rust", "--output", str(self.outputs / "x")],
-            ["--language", "go", "--output", str(self.outputs / "x"), "--version", "0.2.0"],
+            ["--language", "go", "--output", str(self.outputs / "x"), "--version", "0.3.0"],
             ["--output", str(self.outputs / "x"), "--all"],
             ["--all", "--output", "relative"],
             ["--all", "--output", f"{self.outputs}/../escape"],

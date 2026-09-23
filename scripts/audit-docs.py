@@ -44,7 +44,7 @@ AUDITED = ("README.md", *ROOT_DOCUMENTS, CONFORMANCE_GUIDE, *LANGUAGE_READMES)
 
 REQUIRED_TERMS = {
     "docs/sdk-contract.md": [
-        "https://server.cekat.ai", "/api/events/ingest", "Authorization: Bearer", "business_id", "User-Agent: cekat-event-sdk-",
+        "https://t.cekat.ai", "/api/events/ingest", "Authorization: Bearer", "business_id", "User-Agent: cekat-event-sdk-",
         "user_registration", "user_login", "order_created", "order_paid", "is_common", "event_id", "occurred_at",
         "asynchronous processing", "ValidationError", "AuthenticationError", "EventDefinitionNotFoundError",
         "ApiError", "TransportError", "ResponseDecodeError", "conformance/README.md",
@@ -67,13 +67,13 @@ FORBIDDEN = [
     (re.compile(r"Bearer\s+(?!<)[A-Za-z0-9._~+/-]{24,}"), "token-like bearer credential"),
     (re.compile(r"\b(?:npm publish|twine upload|gem push|nuget push|mvnw? deploy|composer publish|gh release create|git push --tags)\b"), "publication command"),
     (re.compile(r"\b(?:is|are|has been|have been|is now|are now)\s+(?:published|available)\s+(?:on|to|in)\s+(?:npm|PyPI|Packagist|RubyGems|Maven Central|NuGet|the registry)", re.IGNORECASE), "publication claim"),
-    (re.compile(r"http://server\.cekat\.ai"), "insecure production origin"),
+    (re.compile(r"http://t\.cekat\.ai"), "insecure production origin"),
     (re.compile(r"/api/events/(?!ingest\b)[A-Za-z]"), "wrong ingest path"),
     (re.compile(r"(?<![_A-Za-z0-9])cekat_visitor_id"), "visitor cookie without its leading underscore"),
     (re.compile(r"\bonly (?:HTTP )?`?500`?\b", re.IGNORECASE), "stale retry claim (only HTTP 500)"),
 ]
 CEKAT_HOST = re.compile(r"\b([a-z0-9.-]*cekat\.ai)\b")
-ALLOWED_HOSTS = {"server.cekat.ai", "schemas.cekat.ai", "golang.cekat.ai"}
+ALLOWED_HOSTS = {"t.cekat.ai", "schemas.cekat.ai", "golang.cekat.ai"}
 HEADER = re.compile(r"x-cekat-visitor-id", re.IGNORECASE)
 POSITIVE_CLAIMS = re.compile(
     r"\bdurabl[ey]\s+(?:stored|persisted|saved|storage|persistence|delivery)\b"
@@ -157,7 +157,7 @@ def audit_text(path: str, text: str, root: Path) -> list[Problem]:
 
     for match in CEKAT_HOST.finditer(text):
         if match.group(1) not in ALLOWED_HOSTS:
-            problems.append(Problem(path, line_of(text, match.start()), f"unknown Cekat host {match.group(1)!r}; the production origin is https://server.cekat.ai"))
+            problems.append(Problem(path, line_of(text, match.start()), f"unknown Cekat host {match.group(1)!r}; the production origin is https://t.cekat.ai"))
 
     for match in HEADER.finditer(text):
         if match.group(0) not in {"X-Cekat-Visitor-ID", "x-cekat-visitor-id"}:

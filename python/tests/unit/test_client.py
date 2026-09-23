@@ -59,7 +59,7 @@ def test_common_method_sends_expected_request() -> None:
     assert request.headers["authorization"] == f"Bearer {TOKEN}"
     assert request.headers["content-type"] == "application/json"
     assert request.headers.get_list("user-agent") == [
-        f"cekat-event-sdk-python/0.2.0 python/{platform.python_version()}"
+        f"cekat-event-sdk-python/0.3.0 python/{platform.python_version()}"
     ]
     body = payload(request)
     assert body["email"] == " a@example.test "
@@ -73,6 +73,7 @@ def test_common_method_sends_expected_request() -> None:
         ("user_registration", "user_registration", True),
         ("user_login", "user_login", True),
         ("order_created", "order_created", True),
+        ("form_submitted", "form_submitted", True),
     ],
 )
 def test_fixed_key_methods(method: str, key: str, is_common: bool) -> None:
