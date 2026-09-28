@@ -62,7 +62,9 @@ class AsyncClient:
     async def user_login(self, event: Event) -> Acknowledgement:
         return await self._track("user_login", True, event)
 
-    async def order_created(self, amount: float | int | Decimal, currency: str, event: Event) -> Acknowledgement:
+    async def order_created(
+        self, amount: float | int | Decimal, currency: str, event: Event
+    ) -> Acknowledgement:
         """Track ``order_created``; ``amount`` and ``currency`` are sent as properties."""
         return await self._track("order_created", True, with_order_paid_properties(amount, currency, event))
 
