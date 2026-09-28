@@ -199,7 +199,7 @@ final class SharedFixturesTest extends TestCase
         return match ($operation->name) {
             'user_registration' => $client->userRegistration($event),
             'user_login' => $client->userLogin($event),
-            'order_created' => $client->orderCreated($event),
+            'order_created' => $client->orderCreated($operation->amount, $operation->currency, $event),
             'order_paid' => $client->orderPaid($operation->amount, $operation->currency, $event),
             'custom_event' => $client->customEvent($operation->event_key, $event),
         };

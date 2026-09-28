@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/gin-gonic/gin v1.12.0
-	golang.cekat.ai/event-sdk v0.3.0
+	golang.cekat.ai/event-sdk v0.4.0
 )
 
 require (

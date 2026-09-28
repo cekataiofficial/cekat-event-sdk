@@ -44,8 +44,9 @@ module CekatEventSdk
       track("user_login", true, event_from(event, attributes))
     end
 
-    def order_created(event = nil, **attributes)
-      track("order_created", true, event_from(event, attributes))
+    # Uses the same required amount/currency properties and validation as order_paid.
+    def order_created(event = nil, amount:, currency:, **attributes)
+      track("order_created", true, PayloadBuilder.with_order_paid_properties(amount, currency, event_from(event, attributes)))
     end
 
     def form_submitted(event = nil, **attributes)

@@ -30,7 +30,7 @@ using var cekat = new CekatClient(new CekatClientOptions
 
 var acknowledgement = await cekat.UserRegistrationAsync(new EventInput(Email: "ada@example.com", ContactName: "Ada Lovelace"));
 await cekat.UserLoginAsync(new EventInput(Email: "ada@example.com"));
-await cekat.OrderCreatedAsync(new EventInput(PhoneNumber: "+6281234567890", Properties: new Dictionary<string, object?> { ["order_id"] = "ord_123" }));
+await cekat.OrderCreatedAsync(125_000m, "IDR", new EventInput(PhoneNumber: "+6281234567890", Properties: new Dictionary<string, object?> { ["order_id"] = "ord_123" }));
 await cekat.FormSubmittedAsync(new EventInput(Email: "ada@example.com", Properties: new Dictionary<string, object?> { ["form_id"] = "contact" }));
 await cekat.OrderPaidAsync(125_000m, "IDR", new EventInput(Email: "ada@example.com", Properties: new Dictionary<string, object?> { ["order_id"] = "ord_123" }));
 await cekat.CustomEventAsync("trial_started", new EventInput(Email: "ada@example.com", Properties: new Dictionary<string, object?> { ["plan"] = "pro" }));
@@ -40,7 +40,7 @@ Console.WriteLine($"{acknowledgement.EventKey}: {acknowledgement.Message}");
 
 Every event needs a nonblank `Email` or `PhoneNumber`. Identity strings are sent exactly as given; they are trimmed only to check that they are not blank.
 
-`FormSubmittedAsync(input)` sends the common `form_submitted` event (`is_common: true`). `OrderPaidAsync(amount, currency, input)` sends `amount` and `currency` (nonblank, sent unchanged) as `properties.amount` and `properties.currency`. Passing either key in `Properties` as well is a `CekatValidationException`.
+`FormSubmittedAsync(input)` sends the common `form_submitted` event (`is_common: true`). `OrderCreatedAsync(amount, currency, input)` and `OrderPaidAsync(amount, currency, input)` send finite `amount` and nonblank `currency` (sent unchanged) as `properties.amount` and `properties.currency`. Passing either key in `Properties` as well is a `CekatValidationException`. They differ only in their event key.
 
 `Properties` is a string-keyed object: a `Dictionary<string, T>` or other `IDictionary` with string keys, an `IEnumerable<KeyValuePair<string, object?>>` (including `ExpandoObject`), a `JsonObject`, or an object `JsonElement`. Values may be `null`, `bool`, `string`, integral and floating-point numbers, `decimal`, arrays and lists, nested objects, `JsonElement`, and `JsonNode`. Integral values must be within ±9,007,199,254,740,991. `NaN`, infinities, cycles, non-string keys, and other types (`DateTime`, `Guid`, enums, POCOs, anonymous objects) are rejected before anything is sent, and the error names the property path but never its value.
 
@@ -206,7 +206,7 @@ To control proxies, TLS, or handlers, pass your own `HttpClient`: `new CekatClie
 ```sh
 dotnet test Cekat.EventSdk.sln                                  # unit, ASP.NET Core, and Functions tests
 ../scripts/conformance.sh --language dotnet                     # shared contract against the mock ingest server
-scripts/package --version 0.3.0 --output /absolute/empty/dir    # tests, vulnerability audit, pack, manifest
+scripts/package --version 0.4.0 --output /absolute/empty/dir    # tests, vulnerability audit, pack, manifest
 ```
 
 On the .NET 10 SDK, add `-p:TestTargetFramework=net10.0` (or set `TEST_TARGET_FRAMEWORK=net10.0` for the scripts) to run the tests on .NET 10. `scripts/package` never pushes, signs, tags, or publishes; releases to nuget.org run from the repository's `release-dotnet.yml` workflow when a `dotnet/vX.Y.Z` tag is pushed. See [COMPATIBILITY.md](COMPATIBILITY.md) for supported versions.

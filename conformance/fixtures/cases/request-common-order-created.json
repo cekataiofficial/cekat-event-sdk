@@ -5,6 +5,8 @@
   "kind": "request",
   "operation": {
     "name": "order_created",
+    "amount": 125.75,
+    "currency": "IDR",
     "event": {
       "email": "buyer@example.com",
       "properties": {
@@ -23,7 +25,9 @@
         "is_common": true,
         "email": "buyer@example.com",
         "properties": {
-          "order_id": "ord-created"
+          "order_id": "ord-created",
+          "amount": 125.75,
+          "currency": "IDR"
         }
       }
     }

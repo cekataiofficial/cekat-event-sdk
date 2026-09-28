@@ -31,7 +31,7 @@ use Cekat\EventSdk\Transport\TransportRequest;
  */
 final class Client
 {
-    public const VERSION = '0.3.0';
+    public const VERSION = '0.4.0';
 
     private const INGEST_PATH = '/api/events/ingest';
 
@@ -83,10 +83,10 @@ final class Client
         return $this->track('user_login', true, $event);
     }
 
-    /** Submits the common order_created event. */
-    public function orderCreated(EventInput $event): Acknowledgement
+    /** Submits the common order_created event with the same amount and currency properties as order_paid. */
+    public function orderCreated(int|float $amount, string $currency, EventInput $event): Acknowledgement
     {
-        return $this->track('order_created', true, $event);
+        return $this->track('order_created', true, PayloadBuilder::withOrderPaidProperties($amount, $currency, $event));
     }
 
     /** Submits the common form_submitted event. */

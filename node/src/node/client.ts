@@ -41,8 +41,8 @@ export class Client {
     return this.track('user_login', true, event, options);
   }
 
-  orderCreated(event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
-    return this.track('order_created', true, event, options);
+  orderCreated(amount: number, currency: string, event: EventInput, options?: CallOptions): Promise<Acknowledgement> {
+    return this.track('order_created', true, withOrderPaidProperties(amount, currency, event), options);
   }
 
   formSubmitted(event: EventInput, options?: CallOptions): Promise<Acknowledgement> {

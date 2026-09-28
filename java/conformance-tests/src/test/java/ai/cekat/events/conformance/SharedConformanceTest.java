@@ -281,7 +281,7 @@ class SharedConformanceTest {
             return switch (operation.get("name").asString()) {
                 case "user_registration" -> sdk.userRegistration(event);
                 case "user_login" -> sdk.userLogin(event);
-                case "order_created" -> sdk.orderCreated(event);
+                case "order_created" -> sdk.orderCreated(operation.get("amount").numberValue(), operation.get("currency").asString(), event);
                 case "order_paid" -> sdk.orderPaid(operation.get("amount").numberValue(), operation.get("currency").asString(), event);
                 case "custom_event" -> sdk.customEvent(operation.get("event_key").asString(), event);
                 default -> throw new AssertionError("unknown operation in " + id);

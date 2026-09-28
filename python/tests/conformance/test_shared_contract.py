@@ -193,9 +193,9 @@ class Case:
         name = operation["name"]
         if name == "custom_event":
             return client.custom_event(operation["event_key"], event)
-        if name == "order_paid":
-            return client.order_paid(operation["amount"], operation["currency"], event)
-        if name in ("user_registration", "user_login", "order_created"):
+        if name in ("order_created", "order_paid"):
+            return getattr(client, name)(operation["amount"], operation["currency"], event)
+        if name in ("user_registration", "user_login"):
             return getattr(client, name)(event)
         raise AssertionError(f"{self.id}: unknown operation {name}")
 

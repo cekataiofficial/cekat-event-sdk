@@ -68,11 +68,15 @@ public sealed class CekatClient : IDisposable
     public Task<Acknowledgement> UserLoginAsync(EventInput input, CancellationToken cancellationToken = default) =>
         TrackAsync("user_login", true, () => input, cancellationToken);
 
-    /// <summary>Tracks <c>order_created</c>.</summary>
+    /// <summary>Tracks <c>order_created</c>, sending <paramref name="amount"/> and <paramref name="currency"/> as properties.</summary>
+    /// <param name="amount">The order amount, sent as <c>properties.amount</c>.</param>
+    /// <param name="currency">A nonblank currency, sent unchanged as <c>properties.currency</c>.</param>
+    /// <param name="input">The event; its properties must not contain <c>amount</c> or <c>currency</c>.</param>
+    /// <param name="cancellationToken">Cancels the request or retry delay.</param>
     /// <exception cref="CekatException">The event was invalid, rejected, or could not be delivered.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
-    public Task<Acknowledgement> OrderCreatedAsync(EventInput input, CancellationToken cancellationToken = default) =>
-        TrackAsync("order_created", true, () => input, cancellationToken);
+    public Task<Acknowledgement> OrderCreatedAsync(decimal amount, string currency, EventInput input, CancellationToken cancellationToken = default) =>
+        TrackAsync("order_created", true, () => EventPayload.WithOrderPaidProperties(amount, currency, input), cancellationToken);
 
     /// <summary>Tracks <c>form_submitted</c>.</summary>
     /// <exception cref="CekatException">The event was invalid, rejected, or could not be delivered.</exception>

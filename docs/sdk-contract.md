@@ -55,24 +55,24 @@ At least one of `email` or `phone_number` must be nonblank. Identity strings are
 | --- | --- | --- | --- |
 | User registration | `user_registration` | `true` | event |
 | User login | `user_login` | `true` | event |
-| Order created | `order_created` | `true` | event |
+| Order created | `order_created` | `true` | amount, currency, event |
 | Form submitted (`FormSubmitted` / language-equivalent method) | `form_submitted` | `true` | event |
 | Order paid | `order_paid` | `true` | amount, currency, event |
 | Custom event | caller's key | `false` | event key, event |
 
 Form submitted is a built-in common operation. Its language-specific methods are listed below; each fixes `event_key` to `form_submitted` and `is_common` to `true`.
 
-Order paid requires a finite `amount` and a nonblank `currency`. They are sent as `properties.amount` and `properties.currency` (currency unchanged, not validated as a code). Passing either key in the event's own properties is a validation error rather than being overwritten. A common key still needs an event definition in the tenant; the common operations imply no special server behavior.
+Order created and Order paid require a finite `amount` and a nonblank `currency`. They are sent as `properties.amount` and `properties.currency` (currency unchanged, not validated as a code). Passing either key in the event's own properties is a validation error rather than being overwritten. Their only behavior difference is the fixed event key. A common key still needs an event definition in the tenant; the common operations imply no special server behavior.
 
-| SDK | Form submitted | Order paid | Custom event |
-| --- | --- | --- | --- |
-| [Go](../go/README.md) | `client.FormSubmitted(ctx, event)` | `client.OrderPaid(ctx, amount, currency, event)` | `client.CustomEvent(ctx, key, event)` |
-| [Node.js and Bun](../node/README.md) | `await client.formSubmitted(event, { signal })` | `await client.orderPaid(amount, currency, event, { signal })` | `await client.customEvent(key, event)` |
-| [Python](../python/README.md) | `client.form_submitted(event)` (also `AsyncClient`) | `client.order_paid(amount, currency, event)` (also `AsyncClient`) | `client.custom_event(key, event)` |
-| [PHP](../php/README.md) | `$client->formSubmitted($event)` | `$client->orderPaid($amount, $currency, $event)` | `$client->customEvent($key, $event)` |
-| [Java](../java/README.md) | `client.formSubmitted(event)` | `client.orderPaid(amount, currency, event)` | `client.customEvent(key, event)` |
-| [.NET](../dotnet/README.md) | `await client.FormSubmittedAsync(input, cancellationToken)` | `await client.OrderPaidAsync(amount, currency, input, cancellationToken)` | `await client.CustomEventAsync(key, input)` |
-| [Ruby](../ruby/README.md) | `client.form_submitted(event)` | `client.order_paid(event, amount:, currency:)` | `client.custom_event(key, event)` |
+| SDK | Form submitted | Order created | Order paid | Custom event |
+| --- | --- | --- | --- | --- |
+| [Go](../go/README.md) | `client.FormSubmitted(ctx, event)` | `client.OrderCreated(ctx, amount, currency, event)` | `client.OrderPaid(ctx, amount, currency, event)` | `client.CustomEvent(ctx, key, event)` |
+| [Node.js and Bun](../node/README.md) | `await client.formSubmitted(event, { signal })` | `await client.orderCreated(amount, currency, event, { signal })` | `await client.orderPaid(amount, currency, event, { signal })` | `await client.customEvent(key, event)` |
+| [Python](../python/README.md) | `client.form_submitted(event)` (also `AsyncClient`) | `client.order_created(amount, currency, event)` (also `AsyncClient`) | `client.order_paid(amount, currency, event)` (also `AsyncClient`) | `client.custom_event(key, event)` |
+| [PHP](../php/README.md) | `$client->formSubmitted($event)` | `$client->orderCreated($amount, $currency, $event)` | `$client->orderPaid($amount, $currency, $event)` | `$client->customEvent($key, $event)` |
+| [Java](../java/README.md) | `client.formSubmitted(event)` | `client.orderCreated(amount, currency, event)` | `client.orderPaid(amount, currency, event)` | `client.customEvent(key, event)` |
+| [.NET](../dotnet/README.md) | `await client.FormSubmittedAsync(input, cancellationToken)` | `await client.OrderCreatedAsync(amount, currency, input, cancellationToken)` | `await client.OrderPaidAsync(amount, currency, input, cancellationToken)` | `await client.CustomEventAsync(key, input)` |
+| [Ruby](../ruby/README.md) | `client.form_submitted(event)` | `client.order_created(event, amount:, currency:)` | `client.order_paid(event, amount:, currency:)` | `client.custom_event(key, event)` |
 
 Asynchronous APIs report invalid input through their normal error channel (a rejected promise, a faulted task, an error when awaited), never by throwing synchronously.
 
