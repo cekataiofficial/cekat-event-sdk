@@ -27,7 +27,7 @@ import java.util.OptionalLong;
  */
 public final class CekatClient {
     /** SDK version reported in the User-Agent header. */
-    public static final String VERSION = "0.3.0";
+    public static final String VERSION = "0.4.0";
 
     private final String accessToken;
     private final CekatClientOptions options;
@@ -89,12 +89,17 @@ public final class CekatClient {
     /**
      * Submits the common order_created event.
      *
+     * The finite {@code amount} and nonblank {@code currency} are sent as the {@code amount} and {@code currency}
+     * properties; the event's properties must not already contain either key.
+     *
+     * @param amount finite amount, for example a {@link java.math.BigDecimal}
+     * @param currency nonblank currency, not validated as a currency code
      * @param event event
      * @return acknowledgement
      * @throws InterruptedException when the calling thread is interrupted
      */
-    public Acknowledgement orderCreated(Event event) throws InterruptedException {
-        return track("order_created", true, event);
+    public Acknowledgement orderCreated(Number amount, String currency, Event event) throws InterruptedException {
+        return track("order_created", true, PayloadEncoder.withOrderPaidProperties(amount, currency, event));
     }
 
     /**

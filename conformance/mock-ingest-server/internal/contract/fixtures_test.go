@@ -126,7 +126,7 @@ func validateConformanceReadme(readme string) error {
 	if err := require("Delivery semantics", "3 seconds per network attempt", "Default retry count is 2 after the initial attempt", "Retry transport failures, eligible timeouts while caller cancellation is inactive, and HTTP `429`, `500`, `502`, `503`, and `504`", "[0,100ms]", "[0,200ms]", "min(100ms * 2^(n-1), 1000ms)", "exceeds **5 seconds**, do not retry", "is a response-decode error with known delivery outcome and is never retried", "Retain at most 65,536 response bytes", "Read one additional byte to determine truncation", "simulates transport behavior but does not decide SDK error types"); err != nil {
 		return err
 	}
-	if err := require("Operation arguments", "`order_paid` takes two required arguments", "`properties.amount` and `properties.currency`", "validation error rather than being silently overwritten"); err != nil {
+	if err := require("Operation arguments", "`order_created` and `order_paid` each take two required arguments", "`properties.amount` and `properties.currency`", "validation error rather than being silently overwritten", "differ only in their fixed event key"); err != nil {
 		return err
 	}
 	if err := require("Event identity, timestamp, and client identification", "lowercase random (version 4) UUID", "UTC RFC 3339 with exactly millisecond precision", "identical in every retry attempt", "User-Agent: cekat-event-sdk-<language>/<semver>"); err != nil {
@@ -201,8 +201,8 @@ func loadCases(t *testing.T) map[string]map[string]any {
 
 func TestCaseIDsAndTokens(t *testing.T) {
 	cases := loadCases(t)
-	if len(cases) != 57 {
-		t.Errorf("discovered %d conformance cases, want 57", len(cases))
+	if len(cases) != 59 {
+		t.Errorf("discovered %d conformance cases, want 59", len(cases))
 	}
 	ids := make(map[string]string, len(cases))
 
@@ -247,7 +247,7 @@ func checkAuthorizationValues(t *testing.T, path, key string, value any) {
 	}
 }
 
-func TestOrderPaidArguments(t *testing.T) {
+func TestOrderOperationArguments(t *testing.T) {
 	compiler := newSchemaCompiler(t)
 	schema, err := compiler.Compile(conformanceCaseSchemaURI)
 	if err != nil {
@@ -255,7 +255,7 @@ func TestOrderPaidArguments(t *testing.T) {
 	}
 	for path, fixture := range loadCases(t) {
 		operation, _ := fixture["operation"].(map[string]any)
-		if operation["name"] != "order_paid" {
+		if operation["name"] != "order_paid" && operation["name"] != "order_created" {
 			continue
 		}
 		request, hasRequest := fixtureExpect(fixture)["request"].(map[string]any)
@@ -270,19 +270,23 @@ func TestOrderPaidArguments(t *testing.T) {
 	}
 
 	base := loadCases(t)
-	var orderPaid, userLogin map[string]any
+	var orderCreated, orderPaid, userLogin map[string]any
 	for _, fixture := range base {
 		switch fixture["id"] {
+		case "request-common-order-created":
+			orderCreated = fixture
 		case "request-common-order-paid":
 			orderPaid = fixture
 		case "request-common-user-login":
 			userLogin = fixture
 		}
 	}
-	missing := cloneJSON(t, orderPaid)
-	delete(missing["operation"].(map[string]any), "currency")
-	if err := schema.Validate(missing); err == nil {
-		t.Error("order_paid without currency unexpectedly satisfied the schema")
+	for name, fixture := range map[string]map[string]any{"order_created": orderCreated, "order_paid": orderPaid} {
+		missing := cloneJSON(t, fixture)
+		delete(missing["operation"].(map[string]any), "currency")
+		if err := schema.Validate(missing); err == nil {
+			t.Errorf("%s without currency unexpectedly satisfied the schema", name)
+		}
 	}
 	forbidden := cloneJSON(t, userLogin)
 	forbidden["operation"].(map[string]any)["amount"] = 1.0
@@ -368,6 +372,8 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 		"retry-500-body-interrupted-success",
 		"success-body-interrupted",
 		"request-explicit-event-id-occurred-at",
+		"validation-order-created-blank-currency",
+		"validation-order-created-properties-conflict",
 		"validation-order-paid-blank-currency",
 		"validation-order-paid-properties-conflict",
 		"cancellation-before-request",
@@ -385,8 +391,8 @@ func TestRequiredBehaviorCoverage(t *testing.T) {
 			t.Fatalf("required behavior fixture %q is missing", id)
 		}
 	}
-	if len(cases) != 57 {
-		t.Errorf("discovered %d cases, want 57", len(cases))
+	if len(cases) != 59 {
+		t.Errorf("discovered %d cases, want 59", len(cases))
 	}
 
 	assertCanonicalResponse(t, byID["success-valid"])

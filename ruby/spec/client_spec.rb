@@ -37,7 +37,7 @@ RSpec.describe CekatEventSdk::Client do
     event = CekatEventSdk::EventInput.new(email: "ada@example.test", properties: { order: "A-1" })
     subject.user_registration(event)
     subject.user_login({ email: "ada@example.test", properties: { order: "A-1" } })
-    subject.order_created(email: "ada@example.test", properties: { order: "A-1" })
+    subject.order_created(email: "ada@example.test", properties: { order: "A-1" }, amount: 125.75, currency: "IDR")
     subject.form_submitted(event)
     subject.order_paid(event, amount: 125.75, currency: "IDR")
     subject.custom_event("trial_started", event)
@@ -47,7 +47,7 @@ RSpec.describe CekatEventSdk::Client do
     expect(summary).to eq([
                             ["user_registration", true, order],
                             ["user_login", true, order],
-                            ["order_created", true, order],
+                            ["order_created", true, order.merge("amount" => 125.75, "currency" => "IDR")],
                             ["form_submitted", true, order],
                             ["order_paid", true, order.merge("amount" => 125.75, "currency" => "IDR")],
                             ["trial_started", false, order]

@@ -70,7 +70,7 @@ class CekatClientTest {
         Event event = Event.builder().email("ada@example.test").property("order", "A-1").build();
         client.userRegistration(event);
         client.userLogin(event);
-        client.orderCreated(event);
+        client.orderCreated(125.75, "IDR", event);
         client.formSubmitted(event);
         client.orderPaid(125.75, "IDR", event);
         client.customEvent("trial_started", event);
@@ -82,7 +82,7 @@ class CekatClientTest {
         assertEquals(List.of(
                 List.of("user_registration", true, "{\"order\":\"A-1\"}"),
                 List.of("user_login", true, "{\"order\":\"A-1\"}"),
-                List.of("order_created", true, "{\"order\":\"A-1\"}"),
+                List.of("order_created", true, "{\"order\":\"A-1\",\"amount\":125.75,\"currency\":\"IDR\"}"),
                 List.of("form_submitted", true, "{\"order\":\"A-1\"}"),
                 List.of("order_paid", true, "{\"order\":\"A-1\",\"amount\":125.75,\"currency\":\"IDR\"}"),
                 List.of("trial_started", false, "{\"order\":\"A-1\"}")), summary);

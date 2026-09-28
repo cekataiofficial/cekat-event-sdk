@@ -297,7 +297,7 @@ public sealed partial class ConformanceTests
             {
                 "user_registration" => client.UserRegistrationAsync(input, cancellationToken),
                 "user_login" => client.UserLoginAsync(input, cancellationToken),
-                "order_created" => client.OrderCreatedAsync(input, cancellationToken),
+                "order_created" => client.OrderCreatedAsync(operation.GetProperty("amount").GetDecimal(), operation.GetProperty("currency").GetString()!, input, cancellationToken),
                 "order_paid" => client.OrderPaidAsync(operation.GetProperty("amount").GetDecimal(), operation.GetProperty("currency").GetString()!, input, cancellationToken),
                 "custom_event" => client.CustomEventAsync(operation.GetProperty("event_key").GetString()!, input, cancellationToken),
                 var name => throw new InvalidOperationException($"{_id}: unknown operation {name}"),

@@ -240,7 +240,10 @@ func dispatch(client *cekat.Client, ctx context.Context, operation operation, ev
 	case "user_login":
 		return client.UserLogin(ctx, event)
 	case "order_created":
-		return client.OrderCreated(ctx, event)
+		if operation.Amount == nil || operation.Currency == nil {
+			return nil, fmt.Errorf("order_created requires amount and currency")
+		}
+		return client.OrderCreated(ctx, *operation.Amount, *operation.Currency, event)
 	case "order_paid":
 		if operation.Amount == nil || operation.Currency == nil {
 			return nil, fmt.Errorf("order_paid requires amount and currency")

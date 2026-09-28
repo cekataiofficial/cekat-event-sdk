@@ -81,7 +81,7 @@ RSpec.describe "Shared conformance" do
     case operation.fetch("name")
     when "user_registration" then client.user_registration(event)
     when "user_login" then client.user_login(event)
-    when "order_created" then client.order_created(event)
+    when "order_created" then client.order_created(event, amount: operation.fetch("amount"), currency: operation.fetch("currency"))
     when "order_paid" then client.order_paid(event, amount: operation.fetch("amount"), currency: operation.fetch("currency"))
     when "custom_event" then client.custom_event(operation.fetch("event_key"), event)
     else raise "unknown operation #{operation['name']}"

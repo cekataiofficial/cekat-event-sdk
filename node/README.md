@@ -31,13 +31,13 @@ const cekat = new Client(process.env.CEKAT_ACCESS_TOKEN!);
 ```ts
 await cekat.userRegistration({ email: 'person@example.test' });
 await cekat.userLogin({ phoneNumber: '+15551234567', visitorId: 'browser-visitor' });
-await cekat.orderCreated({ email: 'person@example.test', properties: { order_id: 'o-1' } });
+await cekat.orderCreated(125000, 'IDR', { email: 'person@example.test', properties: { order_id: 'o-1' } });
 await cekat.formSubmitted({ email: 'person@example.test', properties: { form_id: 'contact' } });
 await cekat.orderPaid(125000, 'IDR', { email: 'person@example.test', properties: { order_id: 'o-1' } });
 await cekat.customEvent('wishlist_updated', { email: 'person@example.test', contactName: 'Ada' });
 ```
 
-`formSubmitted(event)` sends the common `form_submitted` event (`is_common: true`). `orderPaid(amount, currency, event)` additionally requires a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `event.properties`.
+`formSubmitted(event)` sends the common `form_submitted` event (`is_common: true`). `orderCreated(amount, currency, event)` and `orderPaid(amount, currency, event)` require a finite `amount` and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in `event.properties`. They differ only in their event key.
 
 A nonblank explicit `visitorId` takes precedence over request context; a blank explicit value falls back to context. Email and phone are retained as submitted but at least one must be nonblank. Event properties are JSON values only (finite safe numbers, arrays, and plain objects); convert values such as `Date` to strings first.
 
@@ -214,7 +214,7 @@ The automatic interceptor covers browser global `fetch` and `XMLHttpRequest` onl
 ## Local no-publish package preparation
 
 ```sh
-./scripts/package --version 0.3.0 --output /absolute/empty-directory
+./scripts/package --version 0.4.0 --output /absolute/empty-directory
 ```
 
 Bun support is verified separately with `npm run test:bun` (the test suites on Bun, including the Bun-only `test/bun` servers) and `CEKAT_NODE_RUNTIME=bun scripts/conformance` (the shared conformance fixtures on Bun). Both use Node.js and npm for installation and type checking.

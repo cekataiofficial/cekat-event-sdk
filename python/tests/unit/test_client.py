@@ -59,7 +59,7 @@ def test_common_method_sends_expected_request() -> None:
     assert request.headers["authorization"] == f"Bearer {TOKEN}"
     assert request.headers["content-type"] == "application/json"
     assert request.headers.get_list("user-agent") == [
-        f"cekat-event-sdk-python/0.3.0 python/{platform.python_version()}"
+        f"cekat-event-sdk-python/0.4.0 python/{platform.python_version()}"
     ]
     body = payload(request)
     assert body["email"] == " a@example.test "
@@ -78,7 +78,10 @@ def test_common_method_sends_expected_request() -> None:
 )
 def test_fixed_key_methods(method: str, key: str, is_common: bool) -> None:
     harness = Harness(ok(key))
-    getattr(harness.sdk, method)(Event(phone_number="+62"))
+    if method == "order_created":
+        getattr(harness.sdk, method)(125.75, "IDR", Event(phone_number="+62"))
+    else:
+        getattr(harness.sdk, method)(Event(phone_number="+62"))
     assert payload(harness.requests[0])["event_key"] == key
     assert payload(harness.requests[0])["is_common"] is is_common
 

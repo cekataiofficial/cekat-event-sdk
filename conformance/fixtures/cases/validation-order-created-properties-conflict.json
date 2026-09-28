@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "validation-order-created-properties-conflict",
+  "description": "order_created rejects caller properties that would be overwritten by its amount or currency argument.",
+  "kind": "validation",
+  "operation": {
+    "name": "order_created",
+    "amount": 125.75,
+    "currency": "IDR",
+    "event": {
+      "email": "buyer@example.com",
+      "properties": {
+        "currency": "USD"
+      }
+    }
+  },
+  "expect": {
+    "result": "validation_error",
+    "attempts": 0
+  }
+}

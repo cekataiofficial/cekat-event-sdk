@@ -26,13 +26,15 @@ cekat = Client(os.environ["CEKAT_ACCESS_TOKEN"])
 
 ack = cekat.user_registration(Event(email="ada@example.com", contact_name="Ada Lovelace"))
 cekat.user_login(Event(email="ada@example.com"))
-cekat.order_created(Event(phone_number="+6281234567890", properties={"order_id": "ord_123"}))
+cekat.order_created(125_000, "IDR", Event(phone_number="+6281234567890", properties={"order_id": "ord_123"}))
 cekat.form_submitted(Event(email="ada@example.com", properties={"form_id": "contact"}))
 cekat.order_paid(125_000, "IDR", Event(email="ada@example.com", properties={"order_id": "ord_123"}))
 cekat.custom_event("trial_started", Event(email="ada@example.com", properties={"plan": "pro"}))
 
 print(ack.event_key, ack.message, ack.validated_properties)
 ```
+
+`order_created(amount, currency, event)` and `order_paid(amount, currency, event)` require a finite amount and nonblank currency, sent as `properties.amount` and `properties.currency`; do not also put those keys in `Event.properties`. They differ only in their event key.
 
 The async client has the same methods as coroutines:
 
@@ -247,7 +249,7 @@ python3 -m venv .venv
 .venv/bin/python -m ruff check src tests && .venv/bin/python -m ruff format --check src tests
 .venv/bin/python -m mypy
 ../scripts/conformance.sh --language python  # shared contract against the mock ingest server
-.venv/bin/python scripts/package --version 0.3.0 --output /absolute/empty/dir
+.venv/bin/python scripts/package --version 0.4.0 --output /absolute/empty/dir
 ```
 
 `pip install -c constraints-lowest.txt -e ".[test,django,flask,asgi,fastapi]"` installs the declared dependency floors. `scripts/package` runs every check plus `pip-audit`, builds the wheel and sdist, runs `twine check`, and writes a SHA-256 `manifest.json`. It never uploads, signs, tags, or pushes; releases to PyPI run from the repository's `release-python.yml` workflow when a `python/vX.Y.Z` tag is pushed. See [docs/compatibility.md](docs/compatibility.md) for supported versions.

@@ -2,7 +2,7 @@
 
 Submit identity-bearing Cekat events from Java backends and automatically attach the browser visitor ID (from the `X-Cekat-Visitor-ID` header or `_cekat_visitor_id` cookie) of the request being handled.
 
-Requires Java 17 or newer. Artifacts (group `ai.cekat`, version `0.3.0`):
+Requires Java 17 or newer. Artifacts (group `ai.cekat`, version `0.4.0`):
 
 | Artifact | Contents | Dependencies |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ Requires Java 17 or newer. Artifacts (group `ai.cekat`, version `0.3.0`):
 <dependency>
   <groupId>ai.cekat</groupId>
   <artifactId>cekat-event-sdk-spring-boot</artifactId>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
@@ -36,7 +36,7 @@ Event event = Event.builder()
 try {
     client.userRegistration(event);
     client.userLogin(Event.builder().phoneNumber("+628123456789").build());
-    client.orderCreated(event);
+    client.orderCreated(new BigDecimal("125000"), "IDR", event);
     client.formSubmitted(event);
     client.orderPaid(new BigDecimal("125000"), "IDR", event);
     Acknowledgement acknowledgement = client.customEvent("wishlist_updated", event);
@@ -47,7 +47,7 @@ try {
 }
 ```
 
-`formSubmitted(event)` sends the common `form_submitted` event (`is_common: true`). `orderPaid(amount, currency, event)` additionally requires a finite `amount` (any `Number`, such as `BigDecimal`) and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in the event's properties.
+`formSubmitted(event)` sends the common `form_submitted` event (`is_common: true`). `orderCreated(amount, currency, event)` and `orderPaid(amount, currency, event)` require a finite `amount` (any `Number`, such as `BigDecimal`) and a nonblank `currency`, sent as the `amount` and `currency` properties; do not also put those keys in the event's properties. They differ only in their event key.
 
 Events are sent to `https://t.cekat.ai/api/events/ingest`. An `Acknowledgement` means Cekat accepted the event for asynchronous processing. It does not confirm durable storage, identity resolution, delivery completion, or analytics availability.
 
@@ -185,7 +185,7 @@ CekatClient client = new CekatClient(token, CekatClientOptions.builder()
 ```sh
 ./mvnw verify                                    # tests; Checkstyle and SpotBugs also run on JDK 21+
 ./mvnw verify -Dspring-boot.version=4.0.8        # test the Spring module against another Boot line
-./scripts/package --version 0.3.0 --output /absolute/empty-directory
+./scripts/package --version 0.4.0 --output /absolute/empty-directory
 ```
 
 `scripts/package` runs the full build and writes the parent POM plus each module's POM, jar, sources jar, and Javadoc jar in Maven repository layout with a SHA-256 `manifest.json`. It never deploys, signs, tags, or pushes. Releases run from the repository's `release-java.yml` workflow when a `java/vX.Y.Z` tag is pushed: it signs and uploads those artifacts to the Sonatype Portal and stops at `VALIDATED`, leaving the final Publish to a release owner. See the root release checklist. `scripts/conformance` runs the shared conformance fixtures, including the three caller-cancellation cases; see `conformance/README.md`.

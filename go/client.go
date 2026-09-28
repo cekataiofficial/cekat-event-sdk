@@ -22,8 +22,12 @@ func (c *Client) UserLogin(ctx context.Context, event Event) (*Acknowledgement, 
 	return c.track(ctx, "user_login", true, event)
 }
 
-// OrderCreated submits the common order_created event.
-func (c *Client) OrderCreated(ctx context.Context, event Event) (*Acknowledgement, error) {
+// OrderCreated submits the common order_created event with the same amount and currency properties as OrderPaid.
+func (c *Client) OrderCreated(ctx context.Context, amount float64, currency string, event Event) (*Acknowledgement, error) {
+	event, err := withOrderPaidProperties(amount, currency, event)
+	if err != nil {
+		return nil, err
+	}
 	return c.track(ctx, "order_created", true, event)
 }
 

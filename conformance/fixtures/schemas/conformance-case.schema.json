@@ -78,7 +78,7 @@
           "event": {"required": ["properties"]}
         }
       },
-      "if": {"properties": {"name": {"const": "order_paid"}}, "required": ["name"]},
+      "if": {"properties": {"name": {"enum": ["order_created", "order_paid"]}}, "required": ["name"]},
       "then": {"required": ["amount", "currency"]},
       "else": {"not": {"anyOf": [{"required": ["amount"]}, {"required": ["currency"]}]}}
     },

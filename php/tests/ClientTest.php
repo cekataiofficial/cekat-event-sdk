@@ -62,7 +62,7 @@ final class ClientTest extends TestCase
         $event = new EventInput(email: 'ada@example.test', properties: ['order' => 'A-1']);
         $client->userRegistration($event);
         $client->userLogin($event);
-        $client->orderCreated($event);
+        $client->orderCreated(125.75, 'IDR', $event);
         $client->formSubmitted($event);
         $client->orderPaid(125.75, 'IDR', $event);
         $client->customEvent('trial_started', $event);
@@ -71,7 +71,7 @@ final class ClientTest extends TestCase
         self::assertSame([
             ['event_key' => 'user_registration', 'is_common' => true, 'properties' => ['order' => 'A-1']],
             ['event_key' => 'user_login', 'is_common' => true, 'properties' => ['order' => 'A-1']],
-            ['event_key' => 'order_created', 'is_common' => true, 'properties' => ['order' => 'A-1']],
+            ['event_key' => 'order_created', 'is_common' => true, 'properties' => ['order' => 'A-1', 'amount' => 125.75, 'currency' => 'IDR']],
             ['event_key' => 'form_submitted', 'is_common' => true, 'properties' => ['order' => 'A-1']],
             ['event_key' => 'order_paid', 'is_common' => true, 'properties' => ['order' => 'A-1', 'amount' => 125.75, 'currency' => 'IDR']],
             ['event_key' => 'trial_started', 'is_common' => false, 'properties' => ['order' => 'A-1']],
